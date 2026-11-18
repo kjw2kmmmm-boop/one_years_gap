@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# node
+node_modules/
+
+# ros
+install/
+log/

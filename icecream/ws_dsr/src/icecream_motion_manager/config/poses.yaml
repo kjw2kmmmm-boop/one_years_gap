@@ -1,0 +1,62 @@
+# 아이스크림 협동로봇(M0609) 모션 좌표 및 속도 설정
+# 단위:
+#   - joints: [J1, J2, J3, J4, J5, J6] (deg)
+#   - pose / rel_pose: [X, Y, Z, A, B, C] (mm, deg)
+#   - vel / acc: 속도 및 가속도
+
+robot:
+  id: "dsr01"
+  model: "m0609"
+
+home:
+  joints: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]
+  vel: 70.0
+  acc: 70.0
+
+scoop:
+  pose: [426.52, 222.05, 344.64, 100.14, 179.96, 99.89]
+  vel: 80.0
+  acc: 80.0
+
+cup_z:
+  pose: [338.57, -170.40, 556.32, 136.05, 179.95, 135.81]
+  vel: 80.0
+  acc: 80.0
+
+plate:
+  pose: [578.45, -222.64, 284.72, 54.96, -180.00, 54.72]
+  vel: 80.0
+  acc: 80.0
+
+grip_and_lift:
+  rel_pose: [0.0, 0.0, 150.0, 0.0, 0.0, 0.0]
+  vel: 80.0
+  acc: 80.0
+
+flavors:
+  vel: 80.0
+  acc: 80.0
+  items:
+    CHOCO:
+      label: "초코"
+      aliases: ["1", "초코", "CHOCO"]
+      pose: [574.76, 88.09, 344.64, 102.35, 179.96, 102.10]
+    STRAWBERRY:
+      label: "딸기"
+      aliases: ["2", "딸기", "STRAWBERRY"]
+      pose: [573.59, -77.70, 344.64, 102.61, 179.96, 102.36]
+
+cup_calibration:
+  gripper_mass_kg: 1.46
+  tip_offset_z: -238.0
+  ground_z: 0.0
+  min_z: 30.0
+  start_clear_mm: 8.0
+  down_speed: 20.0
+  down_acc: 5.0
+  up_speed: 100.0
+  up_acc: 15.0
+  force_limit: 2.0
+  start_abort_n: 4.0
+  max_seconds: 180.0
+  check_interval: 0.02

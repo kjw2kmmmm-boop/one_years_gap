@@ -1,0 +1,14 @@
+# Goal
+string flavor_name             # "VANILLA", "CHOCO", "STRAWBERRY"
+float64 target_weight_g        # 목표 중량 (기본 궤적 파라미터 결정용, 예: 65.0)
+---
+# Result
+bool success                   # 스쿠핑 성공 여부
+float64 estimated_weight_g     # 외력/토크 적분치 기반 추정 중량 (g)
+int32 error_code               # 0: 정상, 1: 표면 미감지, 2: 토크 과부하(결빙), 3: 모션 타임아웃
+string message
+---
+# Feedback
+string current_stage           # "SURFACE_PROBING", "PENETRATING", "CURLING", "LIFTING"
+float32 progress_percent       # 0.0 ~ 100.0
+float64 current_torque_nm      # 실시간 주 관절 저항 토크 (Nm)

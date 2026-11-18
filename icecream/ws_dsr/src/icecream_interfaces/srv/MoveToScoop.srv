@@ -1,0 +1,4 @@
+# Request (비어있음 또는 필요 시 툴 ID)
+---
+bool success
+string message

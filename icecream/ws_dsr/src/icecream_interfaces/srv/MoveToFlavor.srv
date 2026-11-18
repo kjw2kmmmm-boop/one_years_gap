@@ -1,0 +1,8 @@
+# Request
+string flavor_name             # "VANILLA", "CHOCO", "STRAWBERRY"
+
+---
+# Response
+bool success                   # 도착 완료 여부
+int32 error_code               # 0: 정상, 1: 경로 계획 실패, 2: 비상 정지
+string message

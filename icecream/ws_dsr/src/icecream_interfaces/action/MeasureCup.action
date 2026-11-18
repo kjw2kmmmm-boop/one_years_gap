@@ -1,0 +1,16 @@
+# Goal
+bool measure_diameter          # 상단 테두리 지름 측정 포함 여부
+float64 expected_diameter      # 기대 직경 (mm 단위, 기본 탐색 반경 기준값)
+---
+# Result
+bool success                   # 계측 완료 여부
+bool cup_available             # 컵 잔여 여부 (스택 바닥 도달 시 False)
+float64 measured_height_z      # 감지된 컵 상단 림 Z 좌표 (mm)
+float64 measured_diameter      # 감지된 컵 지름 (mm)
+int32 error_code               # 0: 정상, 1: 접촉 감지 실패, 2: 지름 규격 오차 초과
+string message
+---
+# Feedback
+string current_phase           # "APPROACHING", "PROBING_Z", "PROBING_DIAMETER", "RETRACTING"
+float32 progress_percent       # 0.0 ~ 100.0
+float64 current_contact_force  # 현재 감지된 외력 (N)
