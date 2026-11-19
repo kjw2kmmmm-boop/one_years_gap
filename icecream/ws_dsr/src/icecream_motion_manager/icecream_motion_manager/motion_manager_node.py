@@ -8,14 +8,20 @@ from rclpy.node import Node
 
 from icecream_interfaces.msg import MotionDiagnostics
 from icecream_interfaces.srv import ExecuteTask
+from icecream_motion_manager.calibrate_cup_diameter import calibrate_cup_diameter
 from icecream_motion_manager.calibrate_cup_z import calibration_cup_z
 from icecream_motion_manager.grip_and_lift import grip_and_lift
-from icecream_motion_manager.gripper import griper_grap, griper_release
+from icecream_motion_manager.gripper import griper_cup, griper_grap, griper_release
+from icecream_motion_manager.motion_utils import lift_relative_z, move_to_via
+from icecream_motion_manager.move_cup_hold import move_cup_hold
+from icecream_motion_manager.move_cup_middle import move_cup_middle
+from icecream_motion_manager.move_cup_sprial import move_cup_sprial
 from icecream_motion_manager.move_cup_z import move_cup_z
 from icecream_motion_manager.move_home import ROBOT_ID, ROBOT_MODEL, move_home
 from icecream_motion_manager.move_to_flavor import move_to_flavor
 from icecream_motion_manager.move_to_plate import move_to_plate
 from icecream_motion_manager.move_to_scoop import move_to_scoop
+from icecream_motion_manager.push_cup_corner import push_cup_corner
 
 
 # ExecuteTask.srv error_code 정의
@@ -38,17 +44,27 @@ class MotionManagerNode(Node):
         super().__init__("icecream_motion_manager")
         self._motion_lock = threading.Lock()
         self._latest_cup_height_z = 0.0
+        self._latest_cup_diameter = 0.0
         self._task_handlers = {
             "MOVE_HOME": self._handle_move_home,
             "MOVE_TO_SCOOP": self._handle_move_to_scoop,
             "MOVE_CUP_Z": self._handle_move_cup_z,
+            "MOVE_CUP_HOLD": self._handle_move_cup_hold,
+            "MOVE_CUP_MIDDLE": self._handle_move_cup_middle,
+            "MOVE_CUP_SPRIAL": self._handle_move_cup_sprial,
+            "MOVE_CUP_SPIRAL": self._handle_move_cup_sprial,
             "MOVE_TO_PLATE": self._handle_move_to_plate,
+            "MOVE_TO_VIA": self._handle_move_to_via,
             "MOVE_TO_FLAVOR": self._handle_move_to_flavor,
             "GRIP_AND_LIFT": self._handle_grip_and_lift,
+            "LIFT_Z": self._handle_lift_z,
             "GRIPPER_RELEASE": self._handle_gripper_release,
             "GRIPPER_GRAB": self._handle_gripper_grab,
             "GRIPPER_GRAP": self._handle_gripper_grab,
+            "GRIPPER_CUP": self._handle_gripper_cup,
             "CALIBRATE_CUP_Z": self._handle_calibrate_cup_z,
+            "PUSH_CUP_CORNER": self._handle_push_cup_corner,
+            "CALIBRATE_CUP_DIAMETER": self._handle_calibrate_cup_diameter,
         }
         self._diagnostics_pub = self.create_publisher(MotionDiagnostics, "/motion/diagnostics", 10)
         self._execute_task_srv = self.create_service(
@@ -90,10 +106,55 @@ class MotionManagerNode(Node):
         move_cup_z()
         return True, ERROR_NONE, "컵 측정 위치(Z) 이동 완료"
 
+    def _handle_move_cup_hold(self, target: str) -> tuple[bool, int, str]:
+        cup_height: float | None = None
+        cup_diameter: float | None = None
+
+        if target:
+            parts = [part.strip() for part in target.split(",")]
+            if len(parts) != 2:
+                return (
+                    False,
+                    ERROR_UNKNOWN_COMMAND,
+                    f"잘못된 컵 크기 형식입니다(예: '115.0,90.0'): {target}",
+                )
+            try:
+                cup_height = float(parts[0])
+                cup_diameter = float(parts[1])
+            except ValueError:
+                return (
+                    False,
+                    ERROR_UNKNOWN_COMMAND,
+                    f"잘못된 컵 크기 숫자입니다: {target}",
+                )
+        elif self._latest_cup_height_z > 0.0 and self._latest_cup_diameter > 0.0:
+            cup_height = self._latest_cup_height_z
+            cup_diameter = self._latest_cup_diameter
+
+        move_cup_hold(cup_height=cup_height, cup_diameter=cup_diameter)
+        return True, ERROR_NONE, (
+            f"컵 홀드 위치 이동 완료 (높이 {cup_height:.1f}mm, 지름 {cup_diameter:.1f}mm)"
+        )
+
+    def _handle_move_cup_middle(self, target: str) -> tuple[bool, int, str]:
+        del target  # MOVE_CUP_MIDDLE does not require a target identifier
+        move_cup_middle()
+        return True, ERROR_NONE, "컵 중간 위치(spiral) 이동 완료"
+
+    def _handle_move_cup_sprial(self, target: str) -> tuple[bool, int, str]:
+        del target  # MOVE_CUP_SPRIAL does not require a target identifier
+        move_cup_sprial()
+        return True, ERROR_NONE, "컵 스파이럴 이동 완료"
+
     def _handle_move_to_plate(self, target: str) -> tuple[bool, int, str]:
         del target  # MOVE_TO_PLATE does not require a target identifier
         move_to_plate()
         return True, ERROR_NONE, "측정판 이동 완료"
+
+    def _handle_move_to_via(self, target: str) -> tuple[bool, int, str]:
+        via_section = target.strip() or "via_point"
+        move_to_via(via_section)
+        return True, ERROR_NONE, f"경유 포인트({via_section}) 이동 완료"
 
     def _handle_move_to_flavor(self, target: str) -> tuple[bool, int, str]:
         try:
@@ -107,6 +168,18 @@ class MotionManagerNode(Node):
         grip_and_lift()
         return True, ERROR_NONE, "그리퍼 닫기 및 상승 완료"
 
+    def _handle_lift_z(self, target: str) -> tuple[bool, int, str]:
+        distance = 150.0
+        if target:
+            try:
+                distance = float(target)
+            except ValueError:
+                return False, ERROR_UNKNOWN_COMMAND, f"잘못된 상승 거리 값입니다: {target}"
+            if distance <= 0.0:
+                return False, ERROR_UNKNOWN_COMMAND, f"상승 거리는 0보다 커야 합니다: {target}"
+        lift_relative_z(distance_mm=distance)
+        return True, ERROR_NONE, f"Z축 {distance:.1f}mm 안전 상승 완료"
+
     def _handle_gripper_release(self, target: str) -> tuple[bool, int, str]:
         del target
         griper_release()
@@ -117,13 +190,58 @@ class MotionManagerNode(Node):
         griper_grap()
         return True, ERROR_NONE, "그리퍼 닫기 완료"
 
+    def _handle_gripper_cup(self, target: str) -> tuple[bool, int, str]:
+        del target
+        griper_cup()
+        return True, ERROR_NONE, "컵 파지용 그리퍼 닫기(DO3) 완료"
+
     def _handle_calibrate_cup_z(self, target: str) -> tuple[bool, int, str]:
         del target
         height = calibration_cup_z()
         if height is None:
+            self._latest_cup_height_z = 0.0
             return False, ERROR_MOTION, "컵이 감지되지 않았습니다."
         self._latest_cup_height_z = float(height)
         return True, ERROR_NONE, f"컵 높이 측정 완료: {height:.2f}mm"
+
+    def _handle_push_cup_corner(self, target: str) -> tuple[bool, int, str]:
+        del target
+        message = push_cup_corner()
+        return True, ERROR_NONE, message
+
+    def _handle_calibrate_cup_diameter(self, target: str) -> tuple[bool, int, str]:
+        cup_height_mm: float | None = None
+        if target:
+            try:
+                parsed = float(target)
+            except ValueError:
+                return False, ERROR_UNKNOWN_COMMAND, f"잘못된 컵 높이 값입니다: {target}"
+            if parsed > 0.0:
+                cup_height_mm = parsed
+        elif self._latest_cup_height_z > 0.0:
+            cup_height_mm = self._latest_cup_height_z
+
+        measurement = calibrate_cup_diameter(
+            cup_height_mm=cup_height_mm,
+            allow_fallback=False,
+        )
+        if measurement is None:
+            self._latest_cup_diameter = 0.0
+            return False, ERROR_MOTION, "컵 측면 접촉이 감지되지 않았습니다."
+
+        radius, diameter = measurement
+        self._latest_cup_diameter = float(diameter)
+        if cup_height_mm is not None:
+            return (
+                True,
+                ERROR_NONE,
+                f"컵 지름 측정 완료: {diameter:.1f}mm (반지름 {radius:.1f}mm, 높이 {cup_height_mm:.1f}mm 기준)",
+            )
+        return (
+            True,
+            ERROR_NONE,
+            f"컵 지름 측정 완료: {diameter:.1f}mm (반지름 {radius:.1f}mm, 기본 Z 기준)",
+        )
 
     def _execute_task_callback(
         self,

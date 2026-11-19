@@ -8,8 +8,8 @@ import { TypeSelectPage } from './pages/TypeSelectPage'
 import {
   CUP_PRESETS,
   calculateMaxScoops,
-  createMockOrderId,
 } from './services/kioskMockService'
+import { createOrder } from './services/kioskApi'
 
 const STEPS = [
   { id: 'INSERT_CUP', label: '컵 투입' },
@@ -23,9 +23,12 @@ const STEPS = [
 export default function App() {
   const [step, setStep] = useState('INSERT_CUP')
   const [presetId, setPresetId] = useState('medium')
+  const [iceCreamType, setIceCreamType] = useState('CUP')
   const [measuredCup, setMeasuredCup] = useState({ heightZ: 115.0, diameter: 90.0 })
   const [selectedScoops, setSelectedScoops] = useState([])
   const [orderId, setOrderId] = useState('')
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
+  const [orderSubmitError, setOrderSubmitError] = useState('')
 
   const activePreset = useMemo(
     () => CUP_PRESETS.find((item) => item.id === presetId) ?? CUP_PRESETS[1],
@@ -37,22 +40,64 @@ export default function App() {
 
   const handleMeasureComplete = useCallback((result) => {
     setMeasuredCup(result)
+    setOrderSubmitError('')
     setStep('SELECT_TYPE')
   }, [])
 
-  const handleConfirmScoops = useCallback((scoops) => {
-    setSelectedScoops(scoops)
-    setOrderId(createMockOrderId())
-    setStep('SCOOPING')
-  }, [])
+  const handleSkipMeasure = useCallback(() => {
+    setMeasuredCup({
+      heightZ: activePreset.heightZ,
+      diameter: activePreset.diameter,
+    })
+    setOrderSubmitError('')
+    setStep('SELECT_TYPE')
+  }, [activePreset])
+
+  const submitOrder = useCallback(
+    async (type, scoops) => {
+      if (isSubmittingOrder) return
+      setIsSubmittingOrder(true)
+      setOrderSubmitError('')
+      try {
+        const created = await createOrder({
+          ice_cream_type: type,
+          cup_height_z: measuredCup.heightZ,
+          cup_diameter: measuredCup.diameter,
+          scoops,
+        })
+        setIceCreamType(type)
+        setSelectedScoops(scoops)
+        setOrderId(created.order_code)
+        setStep('SCOOPING')
+      } catch (err) {
+        setOrderSubmitError(err.message || '주문을 서버에 저장하지 못했습니다.')
+      } finally {
+        setIsSubmittingOrder(false)
+      }
+    },
+    [isSubmittingOrder, measuredCup],
+  )
+
+  const handleSelectSoftIceCream = useCallback(() => {
+    submitOrder('SOFT', [])
+  }, [submitOrder])
+
+  const handleConfirmScoops = useCallback(
+    (scoops) => {
+      submitOrder('CUP', scoops)
+    },
+    [submitOrder],
+  )
 
   const handleScoopComplete = useCallback(() => {
     setStep('COMPLETE')
   }, [])
 
   const handleReset = useCallback(() => {
+    setIceCreamType('CUP')
     setSelectedScoops([])
     setOrderId('')
+    setOrderSubmitError('')
     setStep('INSERT_CUP')
   }, [])
 
@@ -90,6 +135,7 @@ export default function App() {
               selectedPresetId={presetId}
               onSelectPreset={setPresetId}
               onStartMeasure={() => setStep('MEASURING')}
+              onSkipMeasure={handleSkipMeasure}
             />
           )}
 
@@ -104,7 +150,14 @@ export default function App() {
             <TypeSelectPage
               measuredCup={measuredCup}
               maxScoops={maxScoops}
-              onSelectCupIceCream={() => setStep('SELECT_FLAVOR')}
+              isSubmitting={isSubmittingOrder}
+              submitError={orderSubmitError}
+              onSelectSoftIceCream={handleSelectSoftIceCream}
+              onSelectCupIceCream={() => {
+                setIceCreamType('CUP')
+                setOrderSubmitError('')
+                setStep('SELECT_FLAVOR')
+              }}
               onBack={() => setStep('INSERT_CUP')}
             />
           )}
@@ -113,6 +166,8 @@ export default function App() {
             <FlavorSelectPage
               measuredCup={measuredCup}
               maxScoops={maxScoops}
+              isSubmitting={isSubmittingOrder}
+              submitError={orderSubmitError}
               onConfirm={handleConfirmScoops}
               onBack={() => setStep('SELECT_TYPE')}
             />
@@ -121,14 +176,17 @@ export default function App() {
           {step === 'SCOOPING' && (
             <ScoopingPage
               orderId={orderId}
+              iceCreamType={iceCreamType}
               scoops={selectedScoops}
               onComplete={handleScoopComplete}
+              onReset={handleReset}
             />
           )}
 
           {step === 'COMPLETE' && (
             <CompletePage
               orderId={orderId}
+              iceCreamType={iceCreamType}
               measuredCup={measuredCup}
               scoops={selectedScoops}
               onReset={handleReset}

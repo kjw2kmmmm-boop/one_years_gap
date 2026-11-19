@@ -1,6 +1,13 @@
 import { FLAVORS } from '../services/kioskMockService'
 
-export function CompletePage({ orderId, measuredCup, scoops, onReset }) {
+export function CompletePage({
+  orderId,
+  iceCreamType = 'CUP',
+  measuredCup,
+  scoops = [],
+  onReset,
+}) {
+  const isSoft = iceCreamType === 'SOFT'
   const summary = FLAVORS.map((flavor) => ({
     ...flavor,
     count: scoops.filter((id) => id === flavor.id).length,
@@ -23,7 +30,9 @@ export function CompletePage({ orderId, measuredCup, scoops, onReset }) {
       <span className="step-pill">STEP 6 · 제조 완료</span>
       <h1 className="kiosk-title">아이스크림이 완성되었습니다</h1>
       <p className="kiosk-desc">
-        픽업 존에서 완성된 컵 아이스크림을 받아가세요.
+        {isSoft
+          ? '픽업 존에서 완성된 소프트 아이스크림을 받아가세요.'
+          : '픽업 존에서 완성된 컵 아이스크림을 받아가세요.'}
       </p>
 
       <div className="receipt-box">
@@ -33,16 +42,20 @@ export function CompletePage({ orderId, measuredCup, scoops, onReset }) {
         </div>
         <div className="receipt-row">
           <span>유형</span>
-          <strong>컵 아이스크림 ({scoops.length}스쿱)</strong>
+          <strong>
+            {isSoft ? '소프트 아이스크림' : `컵 아이스크림 (${scoops.length}스쿱)`}
+          </strong>
         </div>
         <div className="receipt-row">
           <span>측정 컵 높이</span>
           <strong className="tabular">{measuredCup.heightZ} mm</strong>
         </div>
         <div className="receipt-row">
-          <span>맛 구성</span>
+          <span>{isSoft ? '제조 방식' : '맛 구성'}</span>
           <strong>
-            {summary.map((item) => `${item.name} ${item.count}`).join(' · ')}
+            {isSoft
+              ? '스파이럴 자동 추출'
+              : summary.map((item) => `${item.name} ${item.count}`).join(' · ')}
           </strong>
         </div>
       </div>

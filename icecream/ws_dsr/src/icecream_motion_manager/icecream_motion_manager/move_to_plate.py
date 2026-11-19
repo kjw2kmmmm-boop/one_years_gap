@@ -1,32 +1,16 @@
 import rclpy
 import DR_init
 
-from icecream_motion_manager.motion_utils import wait_for_motion
-from icecream_motion_manager.pose_config import get_motion_entry
+from icecream_motion_manager.motion_utils import move_section_with_via
 
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
 
 
 def move_to_plate():
-    """poses.yaml의 plate 좌표(측정판 손잡이 위치)로 직선 이동한다."""
-    from DSR_ROBOT2 import DR_BASE, DR_MV_MOD_ABS, amovel, posx
-
-    plate_handle, vel, acc = get_motion_entry("plate")
-
-    result = amovel(
-        posx(*plate_handle),
-        vel=vel,
-        acc=acc,
-        ref=DR_BASE,
-        mod=DR_MV_MOD_ABS,
-    )
-
-    if result != 0:
-        raise RuntimeError("측정판 이동 실패")
-
-    wait_for_motion()
-    print("측정판 이동 완료")
+    """poses.yaml의 plate 좌표로 경유 모서리를 블렌딩하며 이동한다."""
+    move_section_with_via("plate", label="측정판", use_blending=True)
+    print("측정판 블렌딩 이동 완료")
 
 
 def main(args=None):

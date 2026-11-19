@@ -55,6 +55,18 @@ export function moveCupZ() {
   return requestJson('/move-cup-z', { method: 'POST' })
 }
 
+export function moveCupHold() {
+  return requestJson('/move-cup-hold', { method: 'POST' })
+}
+
+export function moveCupMiddle() {
+  return requestJson('/move-cup-middle', { method: 'POST' })
+}
+
+export function moveCupSprial() {
+  return requestJson('/move-cup-sprial', { method: 'POST' })
+}
+
 export function moveToPlate() {
   return requestJson('/move-to-plate', { method: 'POST' })
 }
@@ -78,22 +90,104 @@ export function gripperGrab() {
   return requestJson('/gripper-grab', { method: 'POST' })
 }
 
+export function gripperCup() {
+  return requestJson('/gripper-cup', { method: 'POST' })
+}
+
 export function calibrateCupZ() {
   return requestJson('/calibrate-cup-z', { method: 'POST' })
+}
+
+export function pushCupCorner() {
+  return requestJson('/push-cup-corner', { method: 'POST' })
+}
+
+export function calibrateCupDiameter() {
+  return requestJson('/calibrate-cup-diameter', { method: 'POST' })
 }
 
 export function fetchTelemetry() {
   return requestJson('/telemetry', { method: 'GET' })
 }
 
+export function fetchActionLogs(limit = 12) {
+  return requestJson(`/action-logs?limit=${limit}&source=DASHBOARD`, { method: 'GET' })
+}
+
+export function clearActionLogs() {
+  return requestJson('/action-logs?source=DASHBOARD', { method: 'DELETE' })
+}
+
+export function fetchOrders({ limit = 20, status = '' } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (status) {
+    params.set('status', status)
+  }
+  return requestJson(`/orders?${params.toString()}`, { method: 'GET' })
+}
+
 export function getTelemetryWebSocketUrl() {
+  return getWebSocketUrl('/ws/telemetry')
+}
+
+export function getManualJogWebSocketUrl() {
+  return getWebSocketUrl('/manual/ws/jog')
+}
+
+export function getScriptRunnerWebSocketUrl() {
+  return getWebSocketUrl('/manual/ws/script')
+}
+
+export function getScriptStatusWebSocketUrl() {
+  return getWebSocketUrl('/manual/ws/script-status')
+}
+
+export function fetchScriptRunnerStatus() {
+  return requestJson('/manual/script/status', { method: 'GET' })
+}
+
+function getWebSocketUrl(wsPath) {
   if (import.meta.env.VITE_WS_BASE_URL) {
-    return `${import.meta.env.VITE_WS_BASE_URL.replace(/\/$/, '')}/ws/telemetry`
+    return `${import.meta.env.VITE_WS_BASE_URL.replace(/\/$/, '')}${wsPath}`
   }
   if (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) {
-    return `${API_BASE.replace(/^http/, 'ws').replace(/\/$/, '')}/ws/telemetry`
+    return `${API_BASE.replace(/^http/, 'ws').replace(/\/$/, '')}${wsPath}`
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const prefix = API_BASE.startsWith('/') ? API_BASE : `/${API_BASE}`
-  return `${protocol}//${window.location.host}${prefix.replace(/\/$/, '')}/ws/telemetry`
+  return `${protocol}//${window.location.host}${prefix.replace(/\/$/, '')}${wsPath}`
+}
+
+export function manualStep(payload) {
+  return requestJson('/manual/step', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function manualStop(stop_mode = 1) {
+  return requestJson('/manual/stop', {
+    method: 'POST',
+    body: JSON.stringify({ stop_mode }),
+  })
+}
+
+export function manualSetSpeed(speed) {
+  return requestJson('/manual/speed', {
+    method: 'POST',
+    body: JSON.stringify({ speed }),
+  })
+}
+
+export function manualSetMode(robot_mode) {
+  return requestJson('/manual/mode', {
+    method: 'POST',
+    body: JSON.stringify({ robot_mode }),
+  })
+}
+
+export function stopManualScript() {
+  return requestJson('/manual/script/stop', {
+    method: 'POST',
+  })
 }

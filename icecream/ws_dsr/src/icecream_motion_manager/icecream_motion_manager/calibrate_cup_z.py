@@ -16,7 +16,7 @@ ROBOT_MODEL = "m0609"
 DEFAULT_CALIBRATION_PARAMS = {
     "gripper_mass_kg": 1.46,
     "tip_offset_z": -238.0,
-    "ground_z": 0.0,
+    "ground_z": 15.0,
     "min_z": 30.0,
     "start_clear_mm": 8.0,
     "down_speed": 20.0,
@@ -88,8 +88,11 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
             raise RuntimeError("힘 센서 오류")
         return force
 
-    def wait_idle() -> None:
-        deadline = time.monotonic() + 5.0
+    def wait_idle(
+        timeout_sec: float = 10.0,
+        error_label: str = "정지 확인 실패",
+    ) -> None:
+        deadline = time.monotonic() + timeout_sec
 
         while time.monotonic() < deadline:
             if robot.check_motion() == 0:
@@ -101,7 +104,7 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
 
             time.sleep(check_interval)
 
-        raise RuntimeError("정지 확인 실패")
+        raise RuntimeError(error_label)
 
     # ROS2 정지 서비스 연결
     stop_client = node.create_client(
@@ -127,7 +130,7 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
         if result is None or not result.success:
             raise RuntimeError("정지 명령 실패")
 
-        wait_idle()
+        wait_idle(timeout_sec=10.0, error_label="정지 확인 실패")
 
     moving = False
 
@@ -224,8 +227,8 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
                     contact_z = current[2] + tip_offset_z
                     print(f"컵 접촉 감지: Z={contact_z:.2f}mm, 힘 변화={force_delta:.2f}N")
 
-                    # 정상 접촉: Soft Stop
-                    stop_motion(2)
+                    # 접촉 즉시 정지(DR_QSTOP)로 컵 과압 방지
+                    stop_motion(1)
                     moving = False
                     break
 
@@ -269,7 +272,16 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
         if result != 0:
             raise RuntimeError("상승 실패")
 
-        wait_idle()
+        start_deadline = time.monotonic() + 0.5
+        while time.monotonic() < start_deadline:
+            if robot.check_motion() != 0:
+                break
+            time.sleep(check_interval)
+
+        wait_idle(
+            timeout_sec=max(30.0, max_seconds),
+            error_label="상승 완료 확인 실패",
+        )
         moving = False
 
         if abs(get_pose()[2] - start[2]) > 0.5:
@@ -282,7 +294,7 @@ def calibration_cup_z(robot=None, node=None) -> float | None:
             print("컵 미감지")
             return None
 
-        height = contact_z - ground_z
+        height = contact_z - ground_z - 20.00
 
         print("========================")
         print(f"그리퍼 보정값: {tip_offset_z:.2f}mm")

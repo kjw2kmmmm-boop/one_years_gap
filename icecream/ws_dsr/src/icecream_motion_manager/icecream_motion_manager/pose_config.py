@@ -1,4 +1,6 @@
+import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -98,3 +100,81 @@ def get_section_config(section: str) -> dict[str, Any]:
     if not isinstance(entry, dict):
         raise KeyError(f"poses.yaml에 '{section}' 섹션이 없습니다.")
     return entry
+
+
+def get_motion_via(section: str) -> str | None:
+    """지정 모션 섹션에 경유 포인트(via) 이름이 설정되어 있으면 반환한다."""
+    entry = get_section_config(section)
+    via = entry.get("via")
+    if isinstance(via, str) and via.strip():
+        return via.strip()
+    return None
+
+
+def resolve_cup_diameter_hit_path() -> Path:
+    """지름 측정 시 접촉 좌표 저장 JSON 파일 경로를 반환한다."""
+    env_path = os.getenv("ICECREAM_DIAMETER_HIT_FILE")
+    if env_path:
+        return Path(env_path).expanduser()
+
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == "ws_dsr":
+            return parent.parent / "data" / "cup_diameter_hit.json"
+
+    return Path.home() / ".icecream" / "cup_diameter_hit.json"
+
+
+def save_cup_diameter_hit(
+    hit_pos: list[float] | tuple[float, ...],
+    *,
+    diameter: float,
+    radius: float,
+    cup_height_mm: float | None = None,
+) -> Path:
+    """지름 측정에서 감지된 실제 컵 측면 접촉 좌표(6축)를 저장한다."""
+    coords = [round(float(v), 3) for v in hit_pos]
+    if len(coords) != 6:
+        raise ValueError("hit_pos는 6개 숫자(X,Y,Z,A,B,C)여야 합니다.")
+
+    payload: dict[str, Any] = {
+        "hit_pos": coords,
+        "diameter": float(diameter),
+        "radius": float(radius),
+        "cup_height_mm": float(cup_height_mm) if cup_height_mm is not None else None,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    target_path = resolve_cup_diameter_hit_path()
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return target_path
+
+
+def load_cup_diameter_hit() -> dict[str, Any] | None:
+    """저장된 컵 측면 접촉 좌표 정보를 읽어 반환한다. 없으면 None."""
+    target_path = resolve_cup_diameter_hit_path()
+    if not target_path.is_file():
+        return None
+    try:
+        data = json.loads(target_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    hit_pos = data.get("hit_pos")
+    if not isinstance(hit_pos, list) or len(hit_pos) != 6:
+        return None
+    try:
+        data["hit_pos"] = [float(v) for v in hit_pos]
+    except (TypeError, ValueError):
+        return None
+    return data
+
+
+def clear_cup_diameter_hit() -> None:
+    """저장된 컵 측면 접촉 좌표 파일을 삭제한다."""
+    target_path = resolve_cup_diameter_hit_path()
+    if target_path.is_file():
+        target_path.unlink()

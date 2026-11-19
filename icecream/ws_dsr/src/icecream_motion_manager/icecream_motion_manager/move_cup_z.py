@@ -1,32 +1,51 @@
 import rclpy
 import DR_init
 
-from icecream_motion_manager.motion_utils import wait_for_motion
-from icecream_motion_manager.pose_config import get_motion_entry
+from icecream_motion_manager.motion_utils import move_to_via
+from icecream_motion_manager.pose_config import get_motion_entry, get_motion_via
 
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
 
 
 def move_cup_z():
-    """poses.yaml의 cup_z 좌표(컵 측정 위치)로 직선 이동한다."""
-    from DSR_ROBOT2 import DR_BASE, DR_MV_MOD_ABS, amovel, posx
+    """poses.yaml의 cup_z 좌표로 movel을 사용해 Z→X→Y 3단계로 순차 이동한다."""
+    from DSR_ROBOT2 import DR_BASE, DR_MV_MOD_ABS, get_current_posx, movel, posx
+
+    via_section = get_motion_via("cup_z")
+    if via_section:
+        move_to_via(via_section)
 
     target_pos, vel, acc = get_motion_entry("cup_z")
 
-    result = amovel(
-        posx(*target_pos),
-        vel=vel,
-        acc=acc,
-        ref=DR_BASE,
-        mod=DR_MV_MOD_ABS,
-    )
+    current_pos, _sol = get_current_posx(ref=DR_BASE)
+    if current_pos is None:
+        raise RuntimeError("현재 위치 확인 실패")
 
-    if result != 0:
-        raise RuntimeError(f"이동 실패: {result}")
+    cx, cy, cz = float(current_pos[0]), float(current_pos[1]), float(current_pos[2])
+    crx, cry, crz = float(current_pos[3]), float(current_pos[4]), float(current_pos[5])
+    tx, ty, tz, trx, try_, trz = [float(v) for v in target_pos]
 
-    wait_for_motion()
-    print("목표 위치 이동 명령 완료")
+    steps: list[tuple[str, list[float]]] = []
+    if abs(cz - tz) > 0.1:
+        steps.append(("1. Z축", [cx, cy, tz, crx, cry, crz]))
+    if abs(cx - tx) > 0.1:
+        steps.append(("2. X축", [tx, cy, tz, trx, try_, trz]))
+    steps.append(("3. Y축", [tx, ty, tz, trx, try_, trz]))
+
+    for step_label, coords in steps:
+        print(f"[컵 측정 위치] {step_label} 이동 -> {coords[:3]}")
+        result = movel(
+            posx(*coords),
+            vel=vel,
+            acc=acc,
+            ref=DR_BASE,
+            mod=DR_MV_MOD_ABS,
+        )
+        if result != 0:
+            raise RuntimeError(f"컵 측정 위치 {step_label} 이동 실패")
+
+    print("컵 측정 위치 Z→X→Y 이동 완료")
 
 
 def main(args=None):

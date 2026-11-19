@@ -18,13 +18,45 @@ scoop:
   vel: 80.0
   acc: 80.0
 
+via_point:
+  pose: [541.92, 270.51, 268.41, 171.49, -176.29, -153.51]
+  vel: 60.0
+  acc: 60.0
+
 cup_z:
-  pose: [338.57, -170.40, 556.32, 136.05, 179.95, 135.81]
+  pose: [355.95, -143.68, 450.12, 59.89, 179.88, 60.12]
   vel: 80.0
   acc: 80.0
 
+cup_hold:
+  pose: [360.89, -145.12, 343.92, -124.86, 179.92, -163.43]
+  vel: 80.0
+  acc: 80.0
+  corner_xy: [273.0, -225.0]
+  ground_z: 0.0
+  x_sign: 1
+  y_sign: 1
+  grip_depth: 10.0
+  tcp_offset: [0.0, 0.0, 238.0]
+  safe_z: 410.0
+  height_range: [30.0, 175.0]
+  diameter_range: [40.0, 150.0]
+
+cup_middle:
+  rel_pose: [90.0, 90.0, 150.0, 0.0, 0.0, 0.0]
+  tool_rel_pose: [0.0, 0.0, 0.0, 0.0, 10.0, 0.0]
+  vel: 30.0
+  acc: 30.0
+
+cup_spiral:
+  turns: 6
+  radius: 40.0
+  height: 149.0
+  points: 60
+  time: 10.0
+
 plate:
-  pose: [578.45, -222.64, 284.72, 54.96, -180.00, 54.72]
+  pose: [573.59, -135.38, 249.19, -121.31, 179.81, -121.34]
   vel: 80.0
   acc: 80.0
 
@@ -60,3 +92,53 @@ cup_calibration:
   start_abort_n: 4.0
   max_seconds: 180.0
   check_interval: 0.02
+
+cup_corner_push:
+  vel_j: 50.0
+  acc_j: 80.0
+  vel_x: 100.0
+  acc_x: 200.0
+  safe_z: 410.0
+  corner_x: 273.0
+  corner_y: -225.0
+  grid_step_mm: 150.0
+  cup_start_gx: 0.75
+  cup_start_gy: 0.75
+  low_drag_z: 230.0
+  offset_dist: 125.0
+  pre_stop_dist: 170.0
+  end_dist: 95.0
+  retreat_dist: 45.0
+  push_speed: 15.0
+  push_acc: 10.0
+  retreat_speed: 15.0
+  retreat_acc: 15.0
+  push_force_threshold: 1.8
+  abort_force: 8.0
+  hits_required: 2
+  sample_sleep: 0.025
+
+cup_diameter_calibration:
+  vel_j: 50.0
+  acc_j: 80.0
+  vel_x: 100.0
+  acc_x: 200.0
+  safe_z: 410.0
+  corner_x: 273.0
+  corner_y: -225.0
+  diag_j6: 45.0
+  side_probe_z: 335.0
+  closed_floor_z: 238.0
+  probe_below_top_mm: 20.0
+  min_side_probe_z: 255.0
+  start_dist: 165.0
+  end_dist: 65.0
+  probe_speed: 4.0
+  probe_acc: 8.0
+  xy_force_threshold: 1.5
+  gripper_half_thick: 7.0
+  abort_force: 8.0
+  hits_required: 2
+  sample_sleep: 0.025
+  fallback_radius: 47.5
+  fallback_diameter: 95.0

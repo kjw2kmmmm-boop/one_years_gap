@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ExecuteTask.srv"
   "srv/MoveToFlavor.srv"
   "srv/MoveToScoop.srv"
+  "action/ExecuteOrder.action"
   "action/MeasureCup.action"
   "action/ScoopFlavor.action"
   DEPENDENCIES builtin_interfaces

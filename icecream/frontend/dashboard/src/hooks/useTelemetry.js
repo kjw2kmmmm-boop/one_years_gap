@@ -8,6 +8,7 @@ const INITIAL_TELEMETRY = {
   is_emergency_stopped: false,
   is_robot_moving: false,
   current_tcp_pose: [0, 0, 0, 0, 0, 0],
+  current_joint_angles: [0, 0, 0, 0, 0, 0],
   joint_torques: [0, 0, 0, 0, 0, 0],
   tool_force_z: 0,
   system_state: 'IDLE',
@@ -25,6 +26,7 @@ export function useTelemetry() {
   useEffect(() => {
     let active = true
     let socket = null
+    let connectTimer = null
     let reconnectTimer = null
 
     fetchTelemetry()
@@ -72,12 +74,34 @@ export function useTelemetry() {
       }
     }
 
-    connect()
+    function closeSocket() {
+      active = false
+      if (connectTimer) {
+        clearTimeout(connectTimer)
+        connectTimer = null
+      }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+      if (
+        socket &&
+        (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+      ) {
+        socket.close(1000, 'Client closed')
+      }
+      socket = null
+    }
+
+    window.addEventListener('pagehide', closeSocket)
+    window.addEventListener('beforeunload', closeSocket)
+    // React StrictMode 개발 모드의 즉시 mount/unmount 사이클에서 불필요한 EPIPE 핸드셰이크를 방지한다.
+    connectTimer = setTimeout(connect, 0)
 
     return () => {
-      active = false
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (socket) socket.close()
+      window.removeEventListener('pagehide', closeSocket)
+      window.removeEventListener('beforeunload', closeSocket)
+      closeSocket()
     }
   }, [])
 

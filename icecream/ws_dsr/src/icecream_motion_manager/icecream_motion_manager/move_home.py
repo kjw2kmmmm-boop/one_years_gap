@@ -2,7 +2,7 @@ import time
 import rclpy
 import DR_init
 
-from icecream_motion_manager.motion_utils import wait_for_motion
+from icecream_motion_manager.motion_utils import ensure_default_tcp, wait_for_motion
 from icecream_motion_manager.pose_config import get_motion_entry
 
 ROBOT_ID = "dsr01"
@@ -46,7 +46,8 @@ def move_home():
 
     wait_for_motion()
     grip_release()
-    print("HOME 이동 및 그리퍼 열기 완료")
+    ensure_default_tcp()
+    print("HOME 이동, 그리퍼 열기 및 기본 TCP 확인 완료")
 
 
 def main(args=None):

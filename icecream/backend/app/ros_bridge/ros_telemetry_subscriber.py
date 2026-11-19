@@ -27,6 +27,7 @@ class TelemetrySubscriberNode(Node):
             "is_emergency_stopped": bool(msg.is_emergency_stopped),
             "is_robot_moving": bool(msg.is_robot_moving),
             "current_tcp_pose": [round(float(v), 3) for v in msg.current_tcp_pose],
+            "current_joint_angles": [round(float(v), 3) for v in msg.current_joint_angles],
             "joint_torques": [round(float(v), 3) for v in msg.joint_torques],
             "tool_force_z": round(float(msg.tool_force_z), 3),
             "system_state": str(msg.system_state),

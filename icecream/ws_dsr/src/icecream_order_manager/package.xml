@@ -3,9 +3,14 @@
 <package format="3">
   <name>icecream_order_manager</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Order orchestration node for Icecream Cobot</description>
   <maintainer email="ubuntu@todo.todo">ubuntu</maintainer>
   <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>icecream_interfaces</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

@@ -1,0 +1,18 @@
+# Goal
+string order_code              # 주문 식별 코드 (예: "ICE-101")
+string ice_cream_type          # 아이스크림 유형 (예: "CUP")
+float64 cup_height_z           # 측정된 컵 상단 림 Z 좌표 (mm)
+float64 cup_diameter           # 측정된 컵 직경 (mm)
+string[] scoops                # 순서가 유지되는 맛 목록 (예: ["CHOCO", "STRAWBERRY"])
+---
+# Result
+bool success                   # 전체 주문 제조 완료 여부
+int32 error_code               # 0: 정상, 1: 모션 에러, 2: 잘못된 주문 파라미터, 3: 중단/취소
+string message                 # 최종 결과 메시지
+---
+# Feedback
+string order_status            # "IN_PROGRESS", "SCOOPING", "COMPLETING"
+string current_step            # 예: "PREPARING_SCOOP", "SCOOP_1_CHOCO", "RETURNING_HOME"
+int32 current_scoop_index      # 현재 진행 중인 스쿱 순번 (1부터 시작, 준비/마무리는 0)
+float32 progress_percent       # 전체 공정 진행률 (0.0 ~ 100.0)
+string message                 # 단계 상세 메시지

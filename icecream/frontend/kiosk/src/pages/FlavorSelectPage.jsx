@@ -1,7 +1,14 @@
 import { useState } from 'react'
 import { FLAVORS } from '../services/kioskMockService'
 
-export function FlavorSelectPage({ measuredCup, maxScoops, onConfirm, onBack }) {
+export function FlavorSelectPage({
+  measuredCup,
+  maxScoops,
+  isSubmitting = false,
+  submitError = '',
+  onConfirm,
+  onBack,
+}) {
   const [scoops, setScoops] = useState([])
 
   const handleAddFlavor = (flavorId) => {
@@ -98,15 +105,22 @@ export function FlavorSelectPage({ measuredCup, maxScoops, onConfirm, onBack }) 
         ))}
       </div>
 
+      {submitError && (
+        <p className="kiosk-desc" style={{ color: '#a95d47', marginTop: '12px' }}>
+          {submitError}
+        </p>
+      )}
+
       <div className="kiosk-footer kiosk-footer--between">
         <div className="footer-left">
-          <button type="button" className="ghost-btn" onClick={onBack}>
+          <button type="button" className="ghost-btn" disabled={isSubmitting} onClick={onBack}>
             이전
           </button>
           {scoops.length > 0 && (
             <button
               type="button"
               className="ghost-btn"
+              disabled={isSubmitting}
               onClick={() => setScoops([])}
             >
               선택 비우기
@@ -121,10 +135,10 @@ export function FlavorSelectPage({ measuredCup, maxScoops, onConfirm, onBack }) 
           <button
             type="button"
             className="primary-cta primary-cta--compact"
-            disabled={scoops.length === 0}
+            disabled={scoops.length === 0 || isSubmitting}
             onClick={() => onConfirm(scoops)}
           >
-            확인 ({scoops.length}스쿱 제조 시작)
+            {isSubmitting ? '주문 전송 중...' : `확인 (${scoops.length}스쿱 제조 시작)`}
           </button>
         </div>
       </div>

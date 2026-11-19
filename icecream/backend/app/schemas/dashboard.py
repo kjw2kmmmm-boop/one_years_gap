@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TaskExecuteResponse(BaseModel):
@@ -8,6 +10,23 @@ class TaskExecuteResponse(BaseModel):
 
 
 HomeMoveResponse = TaskExecuteResponse
+
+
+class ActionLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source: str
+    order_id: int | None = None
+    command: str
+    target: str | None = None
+    endpoint: str | None = None
+    status: str
+    http_status: int | None = None
+    error_code: int | None = None
+    message: str | None = None
+    duration_ms: int | None = None
+    executed_at: datetime
 
 
 class MoveToFlavorRequest(BaseModel):
@@ -21,6 +40,7 @@ class TelemetrySnapshot(BaseModel):
     is_emergency_stopped: bool = False
     is_robot_moving: bool = False
     current_tcp_pose: list[float] = Field(default_factory=lambda: [0.0] * 6)
+    current_joint_angles: list[float] = Field(default_factory=lambda: [0.0] * 6)
     joint_torques: list[float] = Field(default_factory=lambda: [0.0] * 6)
     tool_force_z: float = 0.0
     system_state: str = "IDLE"

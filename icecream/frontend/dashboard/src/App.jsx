@@ -1,8 +1,14 @@
 import { ActionCard } from './components/ActionCard'
 import { ActivityLog } from './components/ActivityLog'
+import { ManualControlPanel } from './components/ManualControlPanel'
+import { OrderHistoryPanel } from './components/OrderHistoryPanel'
+import { ScriptRunnerPanel } from './components/ScriptRunnerPanel'
 import { StatusBanner } from './components/StatusBanner'
 import { TelemetryPanel } from './components/TelemetryPanel'
+import { useManualControl } from './hooks/useManualControl'
+import { useOrders } from './hooks/useOrders'
 import { useRobotActions } from './hooks/useRobotActions'
+import { useScriptRunner } from './hooks/useScriptRunner'
 import { useTelemetry } from './hooks/useTelemetry'
 
 const HEALTH_LABEL = {
@@ -24,6 +30,18 @@ export default function App() {
     clearLogs,
   } = useRobotActions()
   const { telemetry, wsStatus } = useTelemetry()
+  const manual = useManualControl()
+  const scriptRunner = useScriptRunner()
+  const {
+    orders,
+    statusFilter,
+    setStatusFilter,
+    isLoading: isOrdersLoading,
+    error: ordersError,
+    refreshOrders,
+  } = useOrders({
+    refreshKey: `${telemetry.current_order_id}:${telemetry.system_state}`,
+  })
 
   const handleExecuteAction = (action, param) => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -57,6 +75,10 @@ export default function App() {
 
         <TelemetryPanel telemetry={telemetry} wsStatus={wsStatus} />
 
+        <ManualControlPanel telemetry={telemetry} manual={manual} />
+
+        <ScriptRunnerPanel runner={scriptRunner} />
+
         <section className="actions-grid" aria-label="로봇 모션 제어">
           {actions.map((action) => (
             <ActionCard
@@ -68,6 +90,15 @@ export default function App() {
             />
           ))}
         </section>
+
+        <OrderHistoryPanel
+          orders={orders}
+          statusFilter={statusFilter}
+          onChangeFilter={setStatusFilter}
+          isLoading={isOrdersLoading}
+          error={ordersError}
+          onRefresh={refreshOrders}
+        />
 
         <ActivityLog logs={logs} onClear={clearLogs} />
       </main>

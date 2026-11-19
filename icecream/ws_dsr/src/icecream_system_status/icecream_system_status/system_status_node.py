@@ -76,6 +76,7 @@ class SystemStatusNode(Node):
         self._js_moving = False
         self._last_joint_positions: list[float] | None = None
         self._current_tcp_pose = [0.0] * 6
+        self._current_joint_angles = [0.0] * 6
         self._tcp_offset_in_flange = [0.0, 0.0, 0.0]
         self._last_flange_pose: tuple[list[float], list[list[float]]] | None = None
         self._joint_torques = [0.0] * 6
@@ -160,6 +161,7 @@ class SystemStatusNode(Node):
             and any(abs(a - b) > 1e-4 for a, b in zip(positions, self._last_joint_positions))
         )
         self._last_joint_positions = positions
+        self._current_joint_angles = [math.degrees(p) for p in positions]
         self._js_moving = moving_by_vel or moving_by_pos
         self._is_robot_moving = self._js_moving
 
@@ -295,6 +297,7 @@ class SystemStatusNode(Node):
         msg.is_emergency_stopped = self._is_emergency_stopped
         msg.is_robot_moving = self._is_robot_moving
         msg.current_tcp_pose = self._current_tcp_pose
+        msg.current_joint_angles = self._current_joint_angles
         msg.joint_torques = self._joint_torques
         msg.tool_force_z = self._tool_force_z
         msg.system_state = self._system_state

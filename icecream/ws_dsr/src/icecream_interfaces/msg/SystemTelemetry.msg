@@ -5,6 +5,7 @@ string robot_mode              # "MANUAL", "AUTONOMOUS", "EMERGENCY_STOP"
 bool is_emergency_stopped
 bool is_robot_moving
 float64[6] current_tcp_pose    # [X, Y, Z, Rx, Ry, Rz]
+float64[6] current_joint_angles # [J1, J2, J3, J4, J5, J6] (deg)
 float64[6] joint_torques       # 각 관절 토크
 float64 tool_force_z           # Z축 외력 (터치 프로빙 감시용)
 

@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  calibrateCupDiameter,
   calibrateCupZ,
   checkBackendHealth,
+  clearActionLogs,
+  fetchActionLogs,
   gripAndLift,
+  gripperCup,
   gripperGrab,
   gripperRelease,
+  moveCupHold,
+  moveCupMiddle,
+  moveCupSprial,
   moveCupZ,
   moveRobotHome,
   moveRobotToScoop,
   moveToFlavor,
   moveToPlate,
+  pushCupCorner,
 } from '../services/dashboardApi'
 
 export const FLAVOR_OPTIONS = [
@@ -49,6 +57,30 @@ export const ROBOT_ACTIONS = [
     endpoint: 'POST /move-cup-z',
     spec: 'TCP = [338.57, -170.40, 556.32] · vel 80',
     run: moveCupZ,
+  },
+  {
+    id: 'MOVE_CUP_HOLD',
+    title: '컵 홀드 위치 이동',
+    subtitle: '컵 홀드 기준 좌표로 X→Y→Z 순 이동',
+    endpoint: 'POST /move-cup-hold',
+    spec: 'TCP = [354.19, -143.42, 370.58] · vel 80',
+    run: moveCupHold,
+  },
+  {
+    id: 'MOVE_CUP_MIDDLE',
+    title: '컵 중간 위치 이동',
+    subtitle: '그립한 컵을 spiral 시작 위치로 상대 이동 후 Tool Ry +10°',
+    endpoint: 'POST /move-cup-middle',
+    spec: 'rel [+70.0, +70.0, +50.0] · TOOL Ry +10° · vel 30',
+    run: moveCupMiddle,
+  },
+  {
+    id: 'MOVE_CUP_SPRIAL',
+    title: '컵 스파이럴 모션',
+    subtitle: '현재 위치에서 나선형 하강 스파이럴(movesx) 실행',
+    endpoint: 'POST /move-cup-sprial',
+    spec: 'turns 5 · R 20mm · H 60mm · time 10.0s',
+    run: moveCupSprial,
   },
   {
     id: 'MOVE_TO_PLATE',
@@ -92,12 +124,36 @@ export const ROBOT_ACTIONS = [
     run: gripperGrab,
   },
   {
+    id: 'GRIPPER_CUP',
+    title: '컵 그리퍼 닫기',
+    subtitle: 'DO1/DO2 OFF 후 DO3 2.5초 펄스 출력',
+    endpoint: 'POST /gripper-cup',
+    spec: 'DO1,2=0 · DO3=1 (2.5s) → 0',
+    run: gripperCup,
+  },
+  {
     id: 'CALIBRATE_CUP_Z',
     title: '컵 높이 측정 (Z)',
     subtitle: '하강 접촉 감지로 컵 높이 측정 후 원위치 복귀',
     endpoint: 'POST /calibrate-cup-z',
     spec: 'vel 20 → 접촉(≥2N) → offset -238mm',
     run: calibrateCupZ,
+  },
+  {
+    id: 'PUSH_CUP_CORNER',
+    title: '컵 코너 밀착',
+    subtitle: '외력 감지로 컵을 코너 벽까지 스무스하게 밀착',
+    endpoint: 'POST /push-cup-corner',
+    spec: 'LOW_Z 210mm · vel 15 → 벽 접촉(≥1.8N) → 45mm 후퇴',
+    run: pushCupCorner,
+  },
+  {
+    id: 'CALIBRATE_CUP_DIAMETER',
+    title: '컵 지름 측정',
+    subtitle: '측면 접촉 감지로 컵 반지름·지름(mm) 실측',
+    endpoint: 'POST /calibrate-cup-diameter',
+    spec: '측정높이 Z 연동(미측정 시 335mm) · vel 4 → 측면 접촉(≥1.5N)',
+    run: calibrateCupDiameter,
   },
 ]
 
@@ -108,6 +164,20 @@ function formatTime(date) {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function mapActionLogRow(row) {
+  const executedDate = row.executed_at ? new Date(row.executed_at) : new Date()
+  return {
+    id: String(row.id),
+    timestamp: formatTime(executedDate),
+    command: row.target ? `${row.command}:${row.target}` : row.command,
+    title: row.command,
+    success: row.status === 'SUCCESS',
+    errorCode: row.error_code ?? null,
+    message: row.message || (row.status === 'RUNNING' ? '실행 중' : ''),
+    httpStatus: row.http_status ?? null,
+  }
 }
 
 export function useRobotActions() {
@@ -132,6 +202,13 @@ export function useRobotActions() {
 
   useEffect(() => {
     refreshHealth()
+    fetchActionLogs(12)
+      .then((rows) => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          setLogs(rows.map(mapActionLogRow))
+        }
+      })
+      .catch(() => {})
     const timer = setInterval(refreshHealth, 10000)
     return () => clearInterval(timer)
   }, [refreshHealth])
@@ -201,6 +278,7 @@ export function useRobotActions() {
 
   const clearLogs = useCallback(() => {
     setLogs([])
+    clearActionLogs().catch(() => {})
   }, [])
 
   return {

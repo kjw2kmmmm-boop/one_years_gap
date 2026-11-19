@@ -1,6 +1,11 @@
 import { CUP_PRESETS } from '../services/kioskMockService'
 
-export function CupInsertPage({ selectedPresetId, onSelectPreset, onStartMeasure }) {
+export function CupInsertPage({
+  selectedPresetId,
+  onSelectPreset,
+  onStartMeasure,
+  onSkipMeasure,
+}) {
   return (
     <section className="kiosk-card kiosk-card--center">
       <div className="cup-illustration" aria-hidden="true">
@@ -43,13 +48,22 @@ export function CupInsertPage({ selectedPresetId, onSelectPreset, onStartMeasure
         </div>
       </div>
 
-      <button
-        type="button"
-        className="primary-cta"
-        onClick={onStartMeasure}
-      >
-        측정 시작
-      </button>
+      <div className="kiosk-footer" style={{ justifyContent: 'center' }}>
+        <button
+          type="button"
+          className="primary-cta"
+          onClick={onStartMeasure}
+        >
+          측정 시작
+        </button>
+        <button
+          type="button"
+          className="ghost-btn"
+          onClick={onSkipMeasure}
+        >
+          컵 측정 생략
+        </button>
+      </div>
     </section>
   )
 }
