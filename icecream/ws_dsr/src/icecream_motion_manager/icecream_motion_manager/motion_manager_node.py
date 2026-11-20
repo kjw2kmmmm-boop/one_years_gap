@@ -10,6 +10,7 @@ from icecream_interfaces.msg import MotionDiagnostics
 from icecream_interfaces.srv import ExecuteTask
 from icecream_motion_manager.calibrate_cup_diameter import calibrate_cup_diameter
 from icecream_motion_manager.calibrate_cup_z import calibration_cup_z
+from icecream_motion_manager.flatten_icecream import flatten_icecream
 from icecream_motion_manager.grip_and_lift import grip_and_lift
 from icecream_motion_manager.gripper import griper_cup, griper_grap, griper_release
 from icecream_motion_manager.motion_utils import lift_relative_z, move_to_via
@@ -22,6 +23,8 @@ from icecream_motion_manager.move_to_flavor import move_to_flavor
 from icecream_motion_manager.move_to_plate import move_to_plate
 from icecream_motion_manager.move_to_scoop import move_to_scoop
 from icecream_motion_manager.push_cup_corner import push_cup_corner
+from icecream_motion_manager.return_spoon import return_spoon
+from icecream_motion_manager.scoop_icecream import scoop_icecream
 
 
 # ExecuteTask.srv error_code 정의
@@ -33,7 +36,6 @@ ERROR_ABORTED = 3
 PLANNED_COMMANDS = {
     "DISPENSE_CUP",
     "CLEAN_SCOOP",
-    "RELEASE_SCOOP",
 }
 
 
@@ -65,6 +67,11 @@ class MotionManagerNode(Node):
             "CALIBRATE_CUP_Z": self._handle_calibrate_cup_z,
             "PUSH_CUP_CORNER": self._handle_push_cup_corner,
             "CALIBRATE_CUP_DIAMETER": self._handle_calibrate_cup_diameter,
+            "SCOOP_ICECREAM": self._handle_scoop_icecream,
+            "FLATTEN_ICECREAM": self._handle_flatten_icecream,
+            "RELEASE_SCOOP": self._handle_release_scoop,
+            "RETURN_SPOON": self._handle_release_scoop,
+            "FLATTEN_ICECREAM": self._handle_flatten_icecream,
         }
         self._diagnostics_pub = self.create_publisher(MotionDiagnostics, "/motion/diagnostics", 10)
         self._execute_task_srv = self.create_service(
@@ -207,6 +214,26 @@ class MotionManagerNode(Node):
     def _handle_push_cup_corner(self, target: str) -> tuple[bool, int, str]:
         del target
         message = push_cup_corner()
+        return True, ERROR_NONE, message
+
+    def _handle_scoop_icecream(self, target: str) -> tuple[bool, int, str]:
+        del target
+        message = scoop_icecream(interactive=False)
+        return True, ERROR_NONE, message
+
+    def _handle_flatten_icecream(self, target: str) -> tuple[bool, int, str]:
+        del target
+        message = flatten_icecream()
+        return True, ERROR_NONE, message
+
+    def _handle_release_scoop(self, target: str) -> tuple[bool, int, str]:
+        del target
+        message = return_spoon()
+        return True, ERROR_NONE, message
+
+    def _handle_flatten_icecream(self, target: str) -> tuple[bool, int, str]:
+        del target
+        message = flatten_icecream()
         return True, ERROR_NONE, message
 
     def _handle_calibrate_cup_diameter(self, target: str) -> tuple[bool, int, str]:

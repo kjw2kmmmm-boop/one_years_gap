@@ -44,6 +44,9 @@ setup(
             'calibrate_cup_z = icecream_motion_manager.calibrate_cup_z:main',
             'push_cup_corner = icecream_motion_manager.push_cup_corner:main',
             'calibrate_cup_diameter = icecream_motion_manager.calibrate_cup_diameter:main',
+            'scoop_icecream = icecream_motion_manager.scoop_icecream:main',
+            'flatten_icecream = icecream_motion_manager.flatten_icecream:main',
+            'return_spoon = icecream_motion_manager.return_spoon:main',
         ],
     },
 )

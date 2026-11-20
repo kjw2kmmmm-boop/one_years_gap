@@ -186,6 +186,39 @@ async def calibrate_cup_diameter_size() -> TaskExecuteResponse:
     return await _run(dashboard_service.calibrate_cup_diameter)
 
 
+@dashboard.post(
+    "/scoop-icecream",
+    response_model=TaskExecuteResponse,
+    status_code=status.HTTP_200_OK,
+    description="순응제어·힘 감지 기반 아이스크림 스쿠핑 및 투하 시퀀스 실행",
+)
+async def run_scoop_icecream() -> TaskExecuteResponse:
+    """대시보드에서 아이스크림 스쿠핑(하강·밀기·털기·투하) 전체 모션을 실행한다."""
+    return await _run(dashboard_service.scoop_icecream)
+
+
+@dashboard.post(
+    "/flatten-icecream",
+    response_model=TaskExecuteResponse,
+    status_code=status.HTTP_200_OK,
+    description="외력 감지 하강 후 Y축 +200mm 아이스크림 평탄화 시퀀스 실행",
+)
+async def run_flatten_icecream() -> TaskExecuteResponse:
+    """대시보드에서 아이스크림 표면 평탄화(접근·하강·밀기·복귀) 모션을 실행한다."""
+    return await _run(dashboard_service.flatten_icecream)
+
+
+@dashboard.post(
+    "/release-scoop",
+    response_model=TaskExecuteResponse,
+    status_code=status.HTTP_200_OK,
+    description="스쿱 거치대 이동·하강·그리퍼 열기·상승 복귀 시퀀스 실행",
+)
+async def run_release_scoop() -> TaskExecuteResponse:
+    """대시보드에서 스쿱을 거치대에 내려놓고 그리퍼를 연 뒤 상승하는 모션을 실행한다."""
+    return await _run(dashboard_service.release_scoop)
+
+
 @dashboard.get(
     "/action-logs",
     response_model=list[ActionLogResponse],

@@ -106,6 +106,18 @@ export function calibrateCupDiameter() {
   return requestJson('/calibrate-cup-diameter', { method: 'POST' })
 }
 
+export function scoopIcecream() {
+  return requestJson('/scoop-icecream', { method: 'POST' })
+}
+
+export function flattenIcecream() {
+  return requestJson('/flatten-icecream', { method: 'POST' })
+}
+
+export function releaseScoop() {
+  return requestJson('/release-scoop', { method: 'POST' })
+}
+
 export function fetchTelemetry() {
   return requestJson('/telemetry', { method: 'GET' })
 }

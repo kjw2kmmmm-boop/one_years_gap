@@ -5,6 +5,7 @@ import {
   checkBackendHealth,
   clearActionLogs,
   fetchActionLogs,
+  flattenIcecream,
   gripAndLift,
   gripperCup,
   gripperGrab,
@@ -18,6 +19,8 @@ import {
   moveToFlavor,
   moveToPlate,
   pushCupCorner,
+  releaseScoop,
+  scoopIcecream,
 } from '../services/dashboardApi'
 
 export const FLAVOR_OPTIONS = [
@@ -154,6 +157,30 @@ export const ROBOT_ACTIONS = [
     endpoint: 'POST /calibrate-cup-diameter',
     spec: '측정높이 Z 연동(미측정 시 335mm) · vel 4 → 측면 접촉(≥1.5N)',
     run: calibrateCupDiameter,
+  },
+  {
+    id: 'SCOOP_ICECREAM',
+    title: '아이스크림 스쿠핑 · 투하',
+    subtitle: 'tcptest 활성화 후 순응제어 10N 하강 · -Y 밀기 · 털기 · 180° 투하',
+    endpoint: 'POST /scoop-icecream',
+    spec: 'TCP tcptest → ΔFz≥10N → ΔFy≥8N → B=130° 털기 → J6 180° 투하 → 기본 TCP 원복',
+    run: scoopIcecream,
+  },
+  {
+    id: 'FLATTEN_ICECREAM',
+    title: '아이스크림 평탄화',
+    subtitle: '목표 위치 이동 → 외력 감지(5N) 하강 → +Y 200mm 평탄화 → 복귀 상승',
+    endpoint: 'POST /flatten-icecream',
+    spec: 'TCP=[585.45, 17.47, 192.78] · ΔFz≥5N → +Y 200mm(vel 20)',
+    run: flattenIcecream,
+  },
+  {
+    id: 'RELEASE_SCOOP',
+    title: '스쿱 거치 · 복귀',
+    subtitle: '거치대 상단 블렌딩 이동 → 하강 거치 → 그리퍼 열기 → 안전 상승',
+    endpoint: 'POST /release-scoop',
+    spec: 'TCP=[426.52, 222.05, 333.64] · CLEARANCE +80mm · DO2 0.5s 펄스',
+    run: releaseScoop,
   },
 ]
 

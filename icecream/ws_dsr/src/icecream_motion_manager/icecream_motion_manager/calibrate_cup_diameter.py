@@ -1,243 +1,360 @@
 import math
+import os
 import statistics
 import time
 
 import DR_init
 import rclpy
+from DR_common2 import posx
+from dsr_msgs2.srv import MoveStop
 
-from icecream_motion_manager.gripper import griper_grap
-from icecream_motion_manager.pose_config import (
-    clear_cup_diameter_hit,
-    save_cup_diameter_hit,
-)
-from icecream_motion_manager.smooth_controller import (
-    DEFAULT_WORKSPACE_CONSTANTS,
-    ROBOT_ID,
-    ROBOT_MODEL,
-    SYSTEM_HOME,
-    SmoothController,
-    load_section_params,
-)
+from icecream_motion_manager.pose_config import get_section_config
 
-DEFAULT_CALIBRATE_CUP_DIAMETER_PARAMS = {
-    **DEFAULT_WORKSPACE_CONSTANTS,
-    "diag_j6": 45.0,
-    "side_probe_z": 335.0,
-    "closed_floor_z": 238.0,
-    "probe_below_top_mm": 20.0,
-    "min_side_probe_z": 255.0,
-    "start_dist": 165.0,
-    "end_dist": 65.0,
-    "probe_speed": 4.0,
-    "probe_acc": 8.0,
-    "xy_force_threshold": 1.5,
-    "gripper_half_thick": 7.0,
-    "fallback_radius": 47.5,
-    "fallback_diameter": 95.0,
+ROBOT_ID = "dsr01"
+ROBOT_MODEL = "m0609"
+
+DEFAULT_CALIBRATION_PARAMS = {
+    "gripper_mass_kg": 1.46,
+    "tip_offset_z": -238.0,
+    "ground_z": 15.0,
+    "min_z": 30.0,
+    "start_clear_mm": 8.0,
+    "down_speed": 20.0,
+    "down_acc": 5.0,
+    "up_speed": 100.0,
+    "up_acc": 15.0,
+    "force_limit": 2.0,
+    "start_abort_n": 4.0,
+    "max_seconds": 180.0,
+    "check_interval": 0.02,
 }
 
 
-
-def resolve_side_probe_z(
-    params: dict[str, float],
-    cup_height_mm: float | None = None,
-) -> float:
-    """측정된 컵 높이(mm)를 TCP Z(mm)로 변환하고 안전 범위로 클램프한다."""
-    safe_z = params["safe_z"]
-    min_z = params["min_side_probe_z"] + 20.0
-    max_z = safe_z #+ 10.0
-
-    if cup_height_mm is not None and cup_height_mm > 0.0:
-        raw_z = params["closed_floor_z"] + float(cup_height_mm) - params["probe_below_top_mm"]
-    else:
-        raw_z = params["side_probe_z"]
-
-    return round(max(min_z, min(raw_z, max_z)), 2)
+def _load_calibration_params() -> dict[str, float]:
+    try:
+        section = get_section_config("cup_calibration")
+    except Exception:
+        section = {}
+    return {
+        key: float(section.get(key, default))
+        for key, default in DEFAULT_CALIBRATION_PARAMS.items()
+    }
 
 
-def calibrate_cup_diameter(
-    node=None,
-    cup_height_mm: float | None = None,
-    *,
-    allow_fallback: bool = True,
-) -> tuple[float, float] | None:
-    """코너에 밀착된 컵의 측면 접촉 감지로 반지름·지름(mm)을 실측한다."""
+def calibration_cup_z(robot=None, node=None) -> float | None:
+    """
+    컵 위에서 하강 -> 접촉 감지 -> 상승.
+
+    반환: 컵 높이(mm), 미감지: None
+    """
+    if robot is None:
+        import DSR_ROBOT2 as robot_module
+
+        robot = robot_module
     if node is None:
         node = DR_init.__dsr__node
     if node is None:
         raise RuntimeError("DR_init.__dsr__node가 초기화되지 않았습니다.")
 
-    from DR_common2 import posj, posx
-    from DSR_ROBOT2 import DR_BASE, movej, movel
+    params = _load_calibration_params()
+    robot_id = os.getenv("ROBOT_ID", getattr(DR_init, "__dsr__id", "") or ROBOT_ID).strip("/")
 
-    params = load_section_params(
-        "cup_diameter_calibration",
-        DEFAULT_CALIBRATE_CUP_DIAMETER_PARAMS,
+    gripper_mass_kg = params["gripper_mass_kg"]
+    tip_offset_z = params["tip_offset_z"]
+    ground_z = params["ground_z"]
+    min_z = params["min_z"]
+    start_clear_mm = params["start_clear_mm"]
+    down_speed = params["down_speed"]
+    down_acc = params["down_acc"]
+    up_speed = params["up_speed"]
+    up_acc = params["up_acc"]
+    force_limit = params["force_limit"]
+    start_abort_n = params["start_abort_n"]
+    max_seconds = params["max_seconds"]
+    check_interval = params["check_interval"]
+
+    def get_pose() -> list[float]:
+        result = robot.get_current_posx(ref=robot.DR_BASE)
+        pose = [float(v) for v in result[0]]
+
+        if len(pose) != 6 or not all(map(math.isfinite, pose)):
+            raise RuntimeError("TCP 좌표 오류")
+
+        return pose
+
+    def get_force() -> float:
+        force = float(robot.get_tool_force(ref=robot.DR_BASE)[2])
+        if not math.isfinite(force):
+            raise RuntimeError("힘 센서 오류")
+        return force
+
+    def wait_idle(
+        timeout_sec: float = 10.0,
+        error_label: str = "정지 확인 실패",
+    ) -> None:
+        deadline = time.monotonic() + timeout_sec
+
+        while time.monotonic() < deadline:
+            if robot.check_motion() == 0:
+                z1 = get_pose()[2]
+                time.sleep(0.15)
+
+                if robot.check_motion() == 0 and abs(get_pose()[2] - z1) < 0.2:
+                    return
+
+            time.sleep(check_interval)
+
+        raise RuntimeError(error_label)
+
+    # ROS2 정지 서비스 연결
+    stop_client = node.create_client(
+        MoveStop,
+        f"/{robot_id}/dsr_controller2/motion/move_stop",
     )
-    vel_j = params["vel_j"]
-    acc_j = params["acc_j"]
-    vel_x = params["vel_x"]
-    acc_x = params["acc_x"]
-    safe_z = params["safe_z"]
-    corner_x = params["corner_x"]
-    corner_y = params["corner_y"]
-    abort_force = params["abort_force"]
-    hits_required = int(params["hits_required"])
-    sample_sleep = params["sample_sleep"]
 
-    diag_j6 = params["diag_j6"]
-    diag_c = diag_j6
-    side_probe_z = resolve_side_probe_z(params, cup_height_mm=cup_height_mm)
-    start_dist = params["start_dist"]
-    end_dist = params["end_dist"]
-    probe_speed = params["probe_speed"]
-    probe_acc = params["probe_acc"]
-    xy_force_threshold = params["xy_force_threshold"]
-    gripper_half_thick = params["gripper_half_thick"]
-    fallback_radius = params["fallback_radius"]
-    fallback_diameter = params["fallback_diameter"]
+    if not stop_client.wait_for_service(timeout_sec=3.0):
+        node.destroy_client(stop_client)
+        raise RuntimeError("MoveStop 서비스 연결 실패")
 
-    if cup_height_mm is not None and cup_height_mm > 0.0:
-        node.get_logger().info(
-            f"▶ [2단계] 컵 지름 스무스 실측 시작 (컵 높이 {cup_height_mm:.1f}mm → probe Z={side_probe_z:.2f}mm)"
-        )
-    else:
-        node.get_logger().info(
-            f"▶ [2단계] 컵 지름 스무스 실측 시작 (기본 probe Z={side_probe_z:.2f}mm)"
-        )
+    def stop_motion(mode: int) -> None:
+        request = MoveStop.Request()
+        request.stop_mode = mode
 
-    with SmoothController(node, sample_sleep=sample_sleep) as ctrl:
-        #movej(posj(SYSTEM_HOME), vel=vel_j, acc=acc_j)
-        griper_grap()
+        future = stop_client.call_async(request)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=3.0)
 
-        #movej(posj([0.0, 0.0, 90.0, 0.0, 90.0, diag_j6]), vel=vel_j, acc=acc_j)
+        if not future.done():
+            raise RuntimeError("정지 서비스 응답 시간 초과")
 
-        u_diag = math.sqrt(0.5)
-        start_x = round(corner_x + (start_dist * u_diag), 2)
-        start_y = round(corner_y + (start_dist * u_diag), 2)
+        result = future.result()
+        if result is None or not result.success:
+            raise RuntimeError("정지 명령 실패")
 
-        start_x = round(corner_x + (start_dist * u_diag), 2)
-        start_y = round(corner_y + (start_dist * u_diag), 2)
-        
-        target = [
-            round(corner_x + (end_dist * u_diag), 2),
-            round(corner_y + (end_dist * u_diag), 2),
-            side_probe_z,
-            0.0,
-            -180.0,
-            diag_c,
-        ]
+        wait_idle(timeout_sec=10.0, error_label="정지 확인 실패")
 
-        movel(posx([start_x, start_y, safe_z, 0.0, -180.0, diag_c]), vel=vel_x, acc=acc_x, ref=DR_BASE)
-        movel(posx([start_x, start_y, side_probe_z, 0.0, -180.0, diag_c]), vel=50, acc=50, ref=DR_BASE)
-        time.sleep(0.2)
-
-        rest_fx, rest_fy, _ = ctrl.read_baseline()
-
-        ctrl.start_move(target, probe_speed, probe_acc)
-
-        samples = []
-        baseline = None
-        hits = 0
-        first_hit = None
-        hit_pose: list[float] | None = None
-        contact_dist = None
-
-        try:
-            for here, f in ctrl.monitor_motion(target):
-                traveled = math.hypot(here[0] - start_x, here[1] - start_y)
-
-                if baseline is None:
-                    if 2.0 <= traveled < 6.0:
-                        samples.append((f[0], f[1]))
-                    elif traveled >= 6.0:
-                        if len(samples) >= 2:
-                            baseline = (
-                                statistics.median(s[0] for s in samples),
-                                statistics.median(s[1] for s in samples),
-                            )
-                        else:
-                            baseline = (rest_fx, rest_fy)
-
-                ref_fx, ref_fy = baseline if baseline is not None else (rest_fx, rest_fy)
-                delta = math.hypot(f[0] - ref_fx, f[1] - ref_fy)
-
-                if delta >= abort_force:
-                    ctrl.stop()
-                    node.get_logger().warn(f"  ⚠️ 지름 측정 중 과부하 정지 ({delta:.2f}N)")
-                    break
-
-                if traveled >= 6.0 and delta >= xy_force_threshold:
-                    if hits == 0:
-                        first_hit = list(here)
-                    hits += 1
-                    if hits >= hits_required:
-                        ctrl.stop()
-                        hit_pos = first_hit if first_hit is not None else here
-                        hit_pose = [float(v) for v in hit_pos]
-                        contact_dist = round(math.hypot(hit_pos[0] - corner_x, hit_pos[1] - corner_y), 2)
-                        node.get_logger().info(f"  --> 🎯 측면 스무스 터치! L = {contact_dist} mm (ΔFxy={delta:.2f}N)")
-                        break
-                else:
-                    hits = 0
-                    first_hit = None
-        except Exception:
-            try:
-                ctrl.stop()
-            except Exception:
-                pass
-            raise
-
-        movel(posx([start_x, start_y, side_probe_z, 0.0, -180.0, diag_c]), vel=40, acc=60, ref=DR_BASE)
-        movel(posx([start_x, start_y, safe_z, 0.0, -180.0, diag_c]), vel=vel_x, acc=acc_x, ref=DR_BASE)
-
-    if contact_dist is not None:
-        effective_l = contact_dist - gripper_half_thick
-        radius = round(effective_l / (math.sqrt(2.0) + 1.0), 1)
-        diameter = round(radius * 2.0, 1)
-        if hit_pose is not None:
-            saved_path = save_cup_diameter_hit(
-                hit_pose,
-                diameter=diameter,
-                radius=radius,
-                cup_height_mm=cup_height_mm,
-            )
-            node.get_logger().info(
-                f"▶ [접촉 좌표 저장] X={hit_pose[0]:.2f}, Y={hit_pose[1]:.2f} → {saved_path}"
-            )
-    elif allow_fallback:
-        clear_cup_diameter_hit()
-        radius = fallback_radius
-        diameter = fallback_diameter
-    else:
-        clear_cup_diameter_hit()
-        node.get_logger().warn("▶ [2단계 중단] 컵 측면 접촉이 감지되지 않았습니다.")
-        return None
-
-    node.get_logger().info(f"▶ [2단계 완료] 지름: {diameter} mm (반지름: {radius} mm)")
-    return radius, diameter
-
-
-def main(args=None) -> None:
-    """단독 CLI 실행용 진입점."""
-    rclpy.init(args=args)
-    node = None
+    moving = False
 
     try:
-        DR_init.__dsr__id = ROBOT_ID
-        DR_init.__dsr__model = ROBOT_MODEL
+        if robot.check_motion() != 0:
+            raise RuntimeError("로봇이 이동 중입니다")
 
-        node = rclpy.create_node("calibrate_cup_diameter", namespace=ROBOT_ID)
-        DR_init.__dsr__node = node
+        if robot.get_robot_state() != 1:
+            raise RuntimeError("로봇이 STANDBY가 아닙니다")
 
-        input("컵 지름 측정 경로 안전 확인 후 Enter: ")
-        radius, diameter = calibrate_cup_diameter(node=node)
-        print(f"컵 지름 측정 완료: {diameter:.1f}mm (반지름 {radius:.1f}mm)")
-    except Exception as exc:
-        print(f"오류 발생: {exc}")
+        start = get_pose()
+
+        if not ground_z < min_z < start[2] - start_clear_mm:
+            raise RuntimeError("하강 범위 설정 오류")
+
+        # 1. 정지 상태의 힘 측정
+        samples = []
+        for _ in range(10):
+            samples.append(get_force())
+            time.sleep(0.05)
+
+        if max(samples) - min(samples) > 1.0:
+            raise RuntimeError("초기 힘이 불안정합니다")
+
+        rest_force = statistics.median(samples)
+
+        print(f"시작 Z: {start[2]:.2f}mm")
+        print(f"초기 힘: {rest_force:.2f}N")
+        print(f"그리퍼 무게: {gripper_mass_kg}kg ({gripper_mass_kg * 9.81:.2f}N)")
+
+        # 2. 연속 하강
+        target = start.copy()
+        target[2] = min_z
+
+        moving = True
+        result = robot.amovel(
+            posx(target),
+            vel=down_speed,
+            acc=down_acc,
+            ref=robot.DR_BASE,
+            mod=robot.DR_MV_MOD_ABS,
+        )
+
+        if result != 0:
+            raise RuntimeError("하강 명령 실패")
+
+        deadline = time.monotonic() + max_seconds
+        command_start = time.monotonic()
+
+        moving_samples = []
+        moving_baseline = None
+        contact_z = None
+        hits = 0
+        motion_started = False
+
+        print("측정판 하강 시작")
+
+        # 3. 이동 중 외력 측정
+        while time.monotonic() < deadline:
+            current = get_pose()
+            force = get_force()
+            traveled = start[2] - current[2]
+
+            # 이동 경로 검사
+            if (
+                abs(current[0] - start[0]) > 2.0
+                or abs(current[1] - start[1]) > 2.0
+                or current[2] < min_z - 1.0
+            ):
+                raise RuntimeError("이동 경로 이탈")
+
+            # 처음 8mm는 검증된 비접촉 구간
+            if traveled < start_clear_mm:
+                if abs(force - rest_force) >= start_abort_n:
+                    raise RuntimeError("시작 구간 힘 이상: Tool 설정 확인")
+
+                if traveled >= start_clear_mm / 2:
+                    moving_samples.append(force)
+            else:
+                if moving_baseline is None:
+                    if len(moving_samples) < 2:
+                        raise RuntimeError("이동 중 힘 기준 측정 실패")
+                    moving_baseline = statistics.median(moving_samples)
+                    print(f"이동 중 기준 힘: {moving_baseline:.2f}N")
+
+                force_delta = abs(force - moving_baseline)
+
+                if force_delta >= force_limit:
+                    hits += 1
+                else:
+                    hits = 0
+
+                if hits >= 2:
+                    contact_z = current[2] + tip_offset_z
+                    print(f"컵 접촉 감지: Z={contact_z:.2f}mm, 힘 변화={force_delta:.2f}N")
+
+                    # 접촉 즉시 정지(DR_QSTOP)로 컵 과압 방지
+                    stop_motion(1)
+                    moving = False
+                    break
+
+            state = robot.check_motion()
+            if state in (1, 2):
+                motion_started = True
+            elif state == 0:
+                if abs(current[2] - min_z) < 1.0:
+                    moving = False
+                    print("컵 미감지")
+                    break
+
+                if motion_started:
+                    raise RuntimeError("예상하지 못한 이동 종료")
+
+                if time.monotonic() - command_start > 5.0:
+                    raise RuntimeError("이동 시작 확인 실패")
+            else:
+                raise RuntimeError(f"알 수 없는 이동 상태: {state}")
+
+            time.sleep(check_interval)
+        else:
+            raise RuntimeError("측정 시간 초과")
+
+        # 4. 원위치 상승
+        if robot.get_robot_state() != 1:
+            raise RuntimeError("로봇이 STANDBY가 아니어서 상승 중단")
+
+        print("원위치 상승 시작")
+        moving = True
+
+        result = robot.amovel(
+            posx(start),
+            vel=up_speed,
+            acc=up_acc,
+            ref=robot.DR_BASE,
+            mod=robot.DR_MV_MOD_ABS,
+            radius=0.0,
+        )
+
+        if result != 0:
+            raise RuntimeError("상승 실패")
+
+        start_deadline = time.monotonic() + 0.5
+        while time.monotonic() < start_deadline:
+            if robot.check_motion() != 0:
+                break
+            time.sleep(check_interval)
+
+        wait_idle(
+            timeout_sec=max(30.0, max_seconds),
+            error_label="상승 완료 확인 실패",
+        )
+        moving = False
+
+        if abs(get_pose()[2] - start[2]) > 0.5:
+            raise RuntimeError("상승 위치 오차")
+
+        print("원위치 상승 완료")
+
+        # 5. 컵 높이 계산
+        if contact_z is None:
+            print("컵 미감지")
+            return None
+
+        height = contact_z - ground_z - 20.00
+
+        print("========================")
+        print(f"그리퍼 보정값: {tip_offset_z:.2f}mm")
+        print(f"보정된 접촉 Z: {contact_z:.2f}mm")
+        print(f"컵 높이: {height:.2f}mm")
+        print(f"컵 높이: {height / 10:.2f}cm")
+        print("========================")
+
+        return height
+
+    except BaseException:
+        if moving:
+            try:
+                stop_motion(1)
+                print("빠른 정지 요청 완료")
+            except Exception as error:
+                print(f"정지 확인 실패: {error}")
+
+        print("측정 중단: 로봇 상태 확인 필요")
+        raise
+
     finally:
-        if node is not None:
-            node.destroy_node()
+        node.destroy_client(stop_client)
+
+
+calibrate_cup_z = calibration_cup_z
+
+
+def main():
+    rclpy.init()
+
+    DR_init.__dsr__id = ROBOT_ID
+    DR_init.__dsr__model = ROBOT_MODEL
+
+    node = rclpy.create_node("cup_height_measure", namespace=ROBOT_ID)
+    DR_init.__dsr__node = node
+
+    try:
+        import DSR_ROBOT2 as robot
+
+        print("측정판이 컵보다 최소 8mm 높게 있는지")
+        print("실제로 확인한 경우에만 실행하세요.")
+
+        if input("시작하려면 MOVE 입력: ").strip() != "MOVE":
+            print("측정 취소")
+            return
+
+        cup_height = calibration_cup_z(robot, node)
+
+        if cup_height is not None:
+            print(f"최종 컵 높이: {cup_height:.2f}mm")
+
+    except KeyboardInterrupt:
+        print("사용자 중단: 로봇 상태 확인 필요")
+
+    except Exception as error:
+        print(f"오류: {error}")
+
+    finally:
+        node.destroy_node()
         rclpy.try_shutdown()
 
 

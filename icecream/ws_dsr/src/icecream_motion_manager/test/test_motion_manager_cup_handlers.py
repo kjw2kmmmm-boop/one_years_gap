@@ -16,6 +16,7 @@ from icecream_motion_manager import (
     move_home as move_home_mod,
     move_to_plate as move_to_plate_mod,
     pose_config as pose_config_mod,
+    return_spoon as return_spoon_mod,
 )
 from icecream_motion_manager.motion_manager_node import (
     ERROR_MOTION,
@@ -599,6 +600,37 @@ def test_move_cup_z_uses_sequential_movel_z_then_xy() -> None:
             (338.57, -222.64, 556.32, 136.05, 179.95, 135.81),
             (338.57, -170.40, 556.32, 136.05, 179.95, 135.81),
         ]
+
+
+def test_handle_scoop_icecream_runs_non_interactive() -> None:
+    """Verify SCOOP_ICECREAM handler delegates to scoop_icecream(interactive=False)."""
+    rclpy.init()
+    node = MotionManagerNode()
+    try:
+        with patch.object(
+            motion_manager_node,
+            "scoop_icecream",
+            return_value="스쿠핑 및 투하 완료",
+        ) as mock_scoop:
+            ok, code, msg = node._handle_scoop_icecream("")
+            assert ok is True
+            assert code == ERROR_NONE
+            assert msg == "스쿠핑 및 투하 완료"
+            mock_scoop.assert_called_once_with(interactive=False)
+
+        with patch.object(
+            motion_manager_node,
+            "flatten_icecream",
+            return_value="아이스크림 평탄화 완료",
+        ) as mock_flatten:
+            ok, code, msg = node._handle_flatten_icecream("")
+            assert ok is True
+            assert code == ERROR_NONE
+            assert msg == "아이스크림 평탄화 완료"
+            mock_flatten.assert_called_once_with()
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
 
 
 def test_cup_diameter_hit_persistence_roundtrip(tmp_path, monkeypatch) -> None:
@@ -1319,6 +1351,37 @@ def test_move_cup_z_uses_sequential_movel_z_then_xy() -> None:
         ]
 
 
+def test_handle_scoop_icecream_runs_non_interactive() -> None:
+    """Verify SCOOP_ICECREAM handler delegates to scoop_icecream(interactive=False)."""
+    rclpy.init()
+    node = MotionManagerNode()
+    try:
+        with patch.object(
+            motion_manager_node,
+            "scoop_icecream",
+            return_value="스쿠핑 및 투하 완료",
+        ) as mock_scoop:
+            ok, code, msg = node._handle_scoop_icecream("")
+            assert ok is True
+            assert code == ERROR_NONE
+            assert msg == "스쿠핑 및 투하 완료"
+            mock_scoop.assert_called_once_with(interactive=False)
+
+        with patch.object(
+            motion_manager_node,
+            "flatten_icecream",
+            return_value="아이스크림 평탄화 완료",
+        ) as mock_flatten:
+            ok, code, msg = node._handle_flatten_icecream("")
+            assert ok is True
+            assert code == ERROR_NONE
+            assert msg == "아이스크림 평탄화 완료"
+            mock_flatten.assert_called_once_with()
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
 def test_cup_diameter_hit_persistence_roundtrip(tmp_path, monkeypatch) -> None:
     """Verify cup diameter contact pose save, load, and clear use configured path."""
     hit_file = tmp_path / "cup_diameter_hit.json"
@@ -1463,3 +1526,105 @@ def test_move_cup_hold_uses_saved_hit_minus_5mm(tmp_path, monkeypatch) -> None:
     assert round(result[1], 2) == -150.84
     assert round(result[2], 2) == 316.45
     assert moved_targets == [result]
+
+
+def test_handle_release_scoop_delegates_to_return_spoon() -> None:
+    """Verify RELEASE_SCOOP and RETURN_SPOON handlers call return_spoon()."""
+    rclpy.init()
+    node = MotionManagerNode()
+    try:
+        assert "RELEASE_SCOOP" in node._task_handlers
+        assert "RETURN_SPOON" in node._task_handlers
+        assert "RELEASE_SCOOP" not in motion_manager_node.PLANNED_COMMANDS
+
+        with patch.object(
+            motion_manager_node,
+            "return_spoon",
+            return_value="스쿱 거치 복귀 완료",
+        ) as mock_return:
+            ok, code, msg = node._handle_release_scoop("")
+            assert ok is True
+            assert code == ERROR_NONE
+            assert msg == "스쿱 거치 복귀 완료"
+            mock_return.assert_called_once_with()
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+def test_return_spoon_executes_approach_place_release_and_lift() -> None:
+    """Verify return_spoon runs moveb approach, movel place, DO2 release, and clearance lift."""
+    current_pose = [313.03, -119.04, 240.13, 87.78, -90.0, 180.0]
+    moveb_calls: list[dict] = []
+    movel_calls: list[dict] = []
+    do_calls: list[tuple[int, int]] = []
+    mode_calls: list[int] = []
+
+    fake_dsr = ModuleType("DSR_ROBOT2")
+    fake_dsr.DR_BASE = 0
+    fake_dsr.DR_LINE = 1
+    fake_dsr.DR_MV_MOD_ABS = 0
+    fake_dsr.ROBOT_MODE_AUTONOMOUS = 1
+    fake_dsr.check_motion = lambda: 0
+    fake_dsr.get_robot_state = lambda: 1
+    fake_dsr.posx = lambda coords: list(coords)
+    fake_dsr.posb = lambda seg_type, pose, radius=0.0: (seg_type, list(pose), radius)
+    fake_dsr.get_current_posx = lambda ref=0: (list(current_pose), 0)
+
+    def fake_set_robot_mode(mode: int) -> int:
+        mode_calls.append(mode)
+        return 0
+
+    def fake_moveb(path, vel, acc, ref=0, mod=0) -> int:
+        moveb_calls.append({"path": list(path), "vel": vel, "acc": acc, "ref": ref, "mod": mod})
+        current_pose[:] = list(path[-1][1])
+        return 0
+
+    def fake_movel(pose, vel, acc, ref=0, mod=0, radius=0.0) -> int:
+        movel_calls.append(
+            {"pose": list(pose), "vel": vel, "acc": acc, "ref": ref, "mod": mod, "radius": radius}
+        )
+        current_pose[:] = list(pose)
+        return 0
+
+    def fake_set_do(channel: int, value: int) -> int:
+        do_calls.append((channel, value))
+        return 0
+
+    fake_dsr.set_robot_mode = fake_set_robot_mode
+    fake_dsr.moveb = fake_moveb
+    fake_dsr.movel = fake_movel
+    fake_dsr.set_digital_output = fake_set_do
+
+    rclpy.init()
+    node = rclpy.create_node("test_return_spoon")
+    try:
+        with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
+            with patch.object(return_spoon_mod, "ensure_default_tcp") as mock_tcp:
+                with patch.object(return_spoon_mod.time, "sleep"):
+                    result = return_spoon_mod.return_spoon(node=node)
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+    expected_safe_z = return_spoon_mod.TARGET[2] + return_spoon_mod.CLEARANCE
+    assert "스쿱 거치 복귀 완료" in result
+    mock_tcp.assert_called_once_with()
+    assert mode_calls == [fake_dsr.ROBOT_MODE_AUTONOMOUS]
+    assert len(moveb_calls) == 1
+    assert moveb_calls[0]["path"][0][1][2] == expected_safe_z
+    assert moveb_calls[0]["path"][1][1] == [
+        return_spoon_mod.TARGET[0],
+        return_spoon_mod.TARGET[1],
+        expected_safe_z,
+        return_spoon_mod.TARGET[3],
+        return_spoon_mod.TARGET[4],
+        return_spoon_mod.TARGET[5],
+    ]
+    assert len(movel_calls) == 2
+    assert movel_calls[0]["pose"] == return_spoon_mod.TARGET
+    assert movel_calls[0]["vel"] == return_spoon_mod.DOWN_SPEED
+    assert movel_calls[1]["pose"][2] == expected_safe_z
+    assert movel_calls[1]["vel"] == return_spoon_mod.UP_SPEED
+    assert do_calls == [(1, 0), (2, 1), (2, 0)]
+

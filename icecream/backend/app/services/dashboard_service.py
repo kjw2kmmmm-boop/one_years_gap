@@ -227,5 +227,26 @@ class DashboardService:
             call_timeout=150.0,
         )
 
+    async def scoop_icecream(self) -> TaskExecuteResponse:
+        return await self.execute_command(
+            "SCOOP_ICECREAM",
+            endpoint="/scoop-icecream",
+            call_timeout=180.0,
+        )
+
+    async def flatten_icecream(self) -> TaskExecuteResponse:
+        return await self.execute_command(
+            "FLATTEN_ICECREAM",
+            endpoint="/flatten-icecream",
+            call_timeout=120.0,
+        )
+
+    async def release_scoop(self) -> TaskExecuteResponse:
+        return await self.execute_command(
+            "RELEASE_SCOOP",
+            endpoint="/release-scoop",
+            call_timeout=90.0,
+        )
+
 
 dashboard_service = DashboardService()
