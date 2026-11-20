@@ -23,7 +23,7 @@ DEFAULT_WORKSPACE_CONSTANTS = {
     "acc_j": 80.0,
     "vel_x": 100.0,
     "acc_x": 200.0,
-    "safe_z": 410.0,
+    "safe_z": 420.0,
     "corner_x": 273.0,
     "corner_y": -225.0,
     "grid_step_mm": 150.0,

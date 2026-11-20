@@ -18,13 +18,13 @@ ROBOT_MODEL = "m0609"
 # =====================================
 
 CORNER_XY = (281.49, -230.62)   # 측정판 모서리 (cup_corner_push / cup_diameter_calibration)
-GROUND_Z = 0.0                # 컵 바닥 Z (cup_calibration.ground_z)
+GROUND_Z = 9.0               # 컵 바닥 Z (cup_calibration.ground_z)
 
 X_SIGN = 1                    # 모서리 기준 컵이 놓이는 X 방향
 Y_SIGN = 1                    # 모서리 기준 컵이 놓이는 Y 방향
 
-GRIP_DEPTH = 10.0             # 컵 입구에서 아래로 잡는 깊이
-HIT_OFFSET_XY = (-5.0, -5.0)  # 지름 측정 접촉 좌표(X, Y) 기준 파지 보정 오프셋 (mm)
+GRIP_DEPTH = 0             # 컵 입구에서 아래로 잡는 깊이
+HIT_OFFSET_XY = (0.0, 0.0)  # 지름 측정 접촉 좌표(X, Y) 기준 파지 보정 오프셋 (mm)
 TCP_OFFSET = (0.0, 0.0, 238.0)  # closed_floor_z(238.0) / -tip_offset_z(238.0) 기준 보정값
 
 SAFE_Z = 410.0                # 수평 이동 안전 높이 (cup_corner_push / cup_diameter_calibration.safe_z)
@@ -186,7 +186,7 @@ def move_cup_hold(cup_height: float | None = None, cup_diameter: float | None = 
     ):
         raise RuntimeError("컵 파지 위치 도착 확인 실패")
 
-    print("컵 홀드 위치 X→Y→Z 이동 완료")
+    print("컵 홀드 위치 이동 완료")
     return target_pos
 
 

@@ -44,8 +44,8 @@ def resolve_side_probe_z(
 ) -> float:
     """측정된 컵 높이(mm)를 TCP Z(mm)로 변환하고 안전 범위로 클램프한다."""
     safe_z = params["safe_z"]
-    min_z = params["min_side_probe_z"]
-    max_z = safe_z #- 10.0
+    min_z = params["min_side_probe_z"] + 20.0
+    max_z = safe_z #+ 10.0
 
     if cup_height_mm is not None and cup_height_mm > 0.0:
         raw_z = params["closed_floor_z"] + float(cup_height_mm) - params["probe_below_top_mm"]
@@ -115,6 +115,10 @@ def calibrate_cup_diameter(
         u_diag = math.sqrt(0.5)
         start_x = round(corner_x + (start_dist * u_diag), 2)
         start_y = round(corner_y + (start_dist * u_diag), 2)
+
+        start_x = round(corner_x + (start_dist * u_diag), 2)
+        start_y = round(corner_y + (start_dist * u_diag), 2)
+        
         target = [
             round(corner_x + (end_dist * u_diag), 2),
             round(corner_y + (end_dist * u_diag), 2),

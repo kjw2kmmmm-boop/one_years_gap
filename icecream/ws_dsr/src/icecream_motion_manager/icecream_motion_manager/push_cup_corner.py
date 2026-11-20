@@ -96,12 +96,15 @@ def push_cup_corner(node=None) -> str:
         entry_x = round(start_x - (ux * offset_dist), 2)
         entry_y = round(start_y - (uy * offset_dist), 2)
 
-        movel(posx([entry_x, entry_y, safe_z, drag_a, drag_b, drag_c]), vel=vel_x, acc=acc_x, ref=DR_BASE)
+        #드래그할 위치 이동
+        #movel(posx([entry_x, entry_y, safe_z, drag_a, drag_b, drag_c]), vel=vel_x, acc=acc_x, ref=DR_BASE)
         movel(posx([entry_x, entry_y, low_drag_z, drag_a, drag_b, drag_c]), vel=50, acc=50, ref=DR_BASE)
-        wait(0.3)
+        #wait()
 
         pre_x = round(corner_x + (pre_stop_dist * u_diag), 2)
         pre_y = round(corner_y + (pre_stop_dist * u_diag), 2)
+
+        # 드래그 하면서 지름 측정 시작
         movel(posx([pre_x, pre_y, low_drag_z, drag_a, drag_b, drag_c]), vel=40, acc=50, ref=DR_BASE)
         time.sleep(0.2)
 

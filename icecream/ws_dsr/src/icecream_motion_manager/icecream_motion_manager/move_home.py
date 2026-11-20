@@ -2,7 +2,7 @@ import time
 import rclpy
 import DR_init
 
-from icecream_motion_manager.motion_utils import ensure_default_tcp, wait_for_motion
+from icecream_motion_manager.motion_utils import ensure_default_tcp
 from icecream_motion_manager.pose_config import get_motion_entry
 
 ROBOT_ID = "dsr01"
@@ -30,24 +30,26 @@ def grip_release():
 
 
 def move_home():
-    """poses.yaml의 home 좌표로 이동시키고 그리퍼를 연다."""
-    from DSR_ROBOT2 import amovej, posj
+    """기본 TCP를 확인한 뒤 poses.yaml의 home 좌표로 movel 이동시키고 그리퍼를 연다."""
+    from DSR_ROBOT2 import DR_BASE, DR_MV_MOD_ABS, movel, posx
 
-    home_joints, vel, acc = get_motion_entry("home", pose_key="joints")
+    home_pose, vel, acc = get_motion_entry("home", pose_key="pose")
 
-    result = amovej(
-        posj(*home_joints),
+    ensure_default_tcp()
+
+    result = movel(
+        posx(*home_pose),
         vel=vel,
         acc=acc,
+        ref=DR_BASE,
+        mod=DR_MV_MOD_ABS,
     )
 
     if result != 0:
         raise RuntimeError("HOME 이동 실패")
 
-    wait_for_motion()
     grip_release()
-    ensure_default_tcp()
-    print("HOME 이동, 그리퍼 열기 및 기본 TCP 확인 완료")
+    print("기본 TCP 확인, HOME 직선 이동(movel) 및 그리퍼 열기 완료")
 
 
 def main(args=None):

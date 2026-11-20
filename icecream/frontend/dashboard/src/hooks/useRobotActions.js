@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   calibrateCupDiameter,
   calibrateCupZ,
@@ -37,9 +37,9 @@ export const ROBOT_ACTIONS = [
   {
     id: 'MOVE_HOME',
     title: 'HOME 위치 이동',
-    subtitle: '관절 홈 자세 복귀 및 그리퍼 열기',
+    subtitle: '기본 TCP 확인 후 직선(movel) 홈 복귀 및 그리퍼 열기',
     endpoint: 'POST /home',
-    spec: 'J = [0, 0, 90, 0, 90, 0] · vel 70 · acc 70',
+    spec: 'TCP = [367.47, 7.96, 423.09] · vel 70 · acc 70',
     run: moveRobotHome,
   },
   {
@@ -183,6 +183,7 @@ function mapActionLogRow(row) {
 export function useRobotActions() {
   const [backendStatus, setBackendStatus] = useState('checking')
   const [activeActionId, setActiveActionId] = useState(null)
+  const isExecutingRef = useRef(false)
   const [lastFeedback, setLastFeedback] = useState({
     tone: 'neutral',
     title: '대기 중',
@@ -213,68 +214,79 @@ export function useRobotActions() {
     return () => clearInterval(timer)
   }, [refreshHealth])
 
-  const executeAction = useCallback(
-    async (action, param) => {
-      if (activeActionId) return
+  const executeAction = useCallback(async (action, param) => {
+    if (isExecutingRef.current) {
+      return { success: false, message: '이미 다른 모션이 실행 중입니다.', errorCode: null }
+    }
 
-      const label = param ? `${action.title} (${param})` : action.title
-      setActiveActionId(action.id)
-      setLastFeedback({
-        tone: 'running',
-        title: `${label} 실행 중`,
-        message: `${action.endpoint} 요청을 전송하고 로봇 완료 응답을 기다리는 중입니다.`,
-        errorCode: null,
-      })
+    const label = param ? `${action.title} (${param})` : action.title
+    isExecutingRef.current = true
+    setActiveActionId(action.id)
+    setLastFeedback({
+      tone: 'running',
+      title: `${label} 실행 중`,
+      message: `${action.endpoint} 요청을 전송하고 로봇 완료 응답을 기다리는 중입니다.`,
+      errorCode: null,
+    })
 
-      try {
-        const result = await action.run(param)
-        const entry = {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
-          timestamp: formatTime(new Date()),
-          command: param ? `${action.id}:${param}` : action.id,
-          title: label,
-          success: Boolean(result?.success),
-          errorCode: result?.error_code ?? 0,
-          message: result?.message || '완료되었습니다.',
-          httpStatus: 200,
-        }
-
-        setBackendStatus('connected')
-        setLastFeedback({
-          tone: 'success',
-          title: `${label} 완료`,
-          message: entry.message,
-          errorCode: entry.errorCode,
-        })
-        setLogs((prev) => [entry, ...prev].slice(0, 12))
-      } catch (err) {
-        const entry = {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
-          timestamp: formatTime(new Date()),
-          command: param ? `${action.id}:${param}` : action.id,
-          title: label,
-          success: false,
-          errorCode: err.errorCode ?? null,
-          message: err.message || '요청 처리 중 오류가 발생했습니다.',
-          httpStatus: err.status ?? null,
-        }
-
-        if (!err.status) {
-          setBackendStatus('disconnected')
-        }
-        setLastFeedback({
-          tone: 'error',
-          title: `${label} 실패`,
-          message: entry.message,
-          errorCode: entry.errorCode,
-        })
-        setLogs((prev) => [entry, ...prev].slice(0, 12))
-      } finally {
-        setActiveActionId(null)
+    try {
+      const result = await action.run(param)
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+        timestamp: formatTime(new Date()),
+        command: param ? `${action.id}:${param}` : action.id,
+        title: label,
+        success: Boolean(result?.success),
+        errorCode: result?.error_code ?? 0,
+        message: result?.message || '완료되었습니다.',
+        httpStatus: 200,
       }
-    },
-    [activeActionId],
-  )
+
+      setBackendStatus('connected')
+      setLastFeedback({
+        tone: entry.success ? 'success' : 'error',
+        title: entry.success ? `${label} 완료` : `${label} 실패`,
+        message: entry.message,
+        errorCode: entry.errorCode,
+      })
+      setLogs((prev) => [entry, ...prev].slice(0, 12))
+      return {
+        success: entry.success,
+        message: entry.message,
+        errorCode: entry.errorCode,
+      }
+    } catch (err) {
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+        timestamp: formatTime(new Date()),
+        command: param ? `${action.id}:${param}` : action.id,
+        title: label,
+        success: false,
+        errorCode: err.errorCode ?? null,
+        message: err.message || '요청 처리 중 오류가 발생했습니다.',
+        httpStatus: err.status ?? null,
+      }
+
+      if (!err.status) {
+        setBackendStatus('disconnected')
+      }
+      setLastFeedback({
+        tone: 'error',
+        title: `${label} 실패`,
+        message: entry.message,
+        errorCode: entry.errorCode,
+      })
+      setLogs((prev) => [entry, ...prev].slice(0, 12))
+      return {
+        success: false,
+        message: entry.message,
+        errorCode: entry.errorCode,
+      }
+    } finally {
+      isExecutingRef.current = false
+      setActiveActionId(null)
+    }
+  }, [])
 
   const clearLogs = useCallback(() => {
     setLogs([])

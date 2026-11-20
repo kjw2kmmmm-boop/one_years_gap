@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getOrderProgressWebSocketUrl } from '../services/kioskApi'
 import { FLAVORS } from '../services/kioskMockService'
 
@@ -11,10 +11,17 @@ const SOFT_STEPS = [
   { id: 'MOVE_HOME', label: '6단계 · HOME 복귀' },
 ]
 
+const AUTO_RETRY_ELIGIBLE_STEPS = new Set(['', 'DISPATCHING', 'MOVE_CUP_HOLD'])
+const MAX_SOFT_AUTO_RETRIES = 1
+
 export function ScoopingPage({
   orderId,
   iceCreamType = 'CUP',
   scoops = [],
+  softRetryCount = 0,
+  isRetryingOrder = false,
+  onRetrySoftOrder,
+  onRemeasureCup,
   onComplete,
   onReset,
 }) {
@@ -23,6 +30,15 @@ export function ScoopingPage({
   const [progress, setProgress] = useState(0)
   const [statusMessage, setStatusMessage] = useState('로봇에 주문을 전달하는 중입니다.')
   const [errorMessage, setErrorMessage] = useState('')
+  const [isAutoRetrying, setIsAutoRetrying] = useState(false)
+  const lastStepRef = useRef('DISPATCHING')
+  const onRetryRef = useRef(onRetrySoftOrder)
+  const onCompleteRef = useRef(onComplete)
+  const retryCountRef = useRef(softRetryCount)
+
+  onRetryRef.current = onRetrySoftOrder
+  onCompleteRef.current = onComplete
+  retryCountRef.current = softRetryCount
 
   useEffect(() => {
     if (!orderId) return undefined
@@ -30,12 +46,28 @@ export function ScoopingPage({
     let active = true
     let socket = null
     let completeTimer = null
+    let retryTimer = null
+
+    lastStepRef.current = 'DISPATCHING'
+    setCurrentStep('DISPATCHING')
+    setProgress(0)
+    setErrorMessage('')
+    setIsAutoRetrying(false)
+    setStatusMessage(
+      retryCountRef.current > 0
+        ? `소프트 아이스크림 주문을 재시도 중입니다. (${retryCountRef.current}차 재시도)`
+        : '로봇에 주문을 전달하는 중입니다.',
+    )
 
     const closeSocket = () => {
       active = false
       if (completeTimer) {
         clearTimeout(completeTimer)
         completeTimer = null
+      }
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+        retryTimer = null
       }
       if (
         socket &&
@@ -44,6 +76,34 @@ export function ScoopingPage({
         socket.close(1000, 'Client closed')
       }
       socket = null
+    }
+
+    const triggerFailure = (msg, { cancelled = false } = {}) => {
+      const failedStep = lastStepRef.current
+      const canAutoRetry =
+        iceCreamType === 'SOFT' &&
+        !cancelled &&
+        typeof onRetryRef.current === 'function' &&
+        retryCountRef.current < MAX_SOFT_AUTO_RETRIES &&
+        AUTO_RETRY_ELIGIBLE_STEPS.has(failedStep)
+
+      if (canAutoRetry) {
+        setIsAutoRetrying(true)
+        setErrorMessage('')
+        setStatusMessage(`초기 단계 오류(${msg})로 1회 자동 재시도를 준비 중입니다.`)
+        retryTimer = setTimeout(async () => {
+          if (!active) return
+          const res = await onRetryRef.current({ auto: true })
+          if (active && res && !res.ok) {
+            setIsAutoRetrying(false)
+            setErrorMessage(res.message || msg)
+          }
+        }, 1200)
+        return
+      }
+
+      setIsAutoRetrying(false)
+      setErrorMessage(msg)
     }
 
     window.addEventListener('pagehide', closeSocket)
@@ -58,6 +118,7 @@ export function ScoopingPage({
         const orderStatus = payload.order_status || ''
 
         if (payload.current_step) {
+          lastStepRef.current = payload.current_step
           setCurrentStep(payload.current_step)
         }
         if (payload.progress_percent != null) {
@@ -73,14 +134,16 @@ export function ScoopingPage({
         if (orderStatus === 'COMPLETED' || (payload.type === 'result' && payload.success)) {
           setProgress(100)
           completeTimer = setTimeout(() => {
-            if (active) onComplete()
+            if (active) onCompleteRef.current()
           }, 400)
         } else if (
           orderStatus === 'FAILED' ||
           orderStatus === 'CANCELLED' ||
           (payload.type === 'result' && payload.success === false)
         ) {
-          setErrorMessage(payload.message || '제조 처리 중 오류가 발생했습니다.')
+          triggerFailure(payload.message || '제조 처리 중 오류가 발생했습니다.', {
+            cancelled: orderStatus === 'CANCELLED',
+          })
         }
       } catch {
         // ignore malformed frames
@@ -89,7 +152,7 @@ export function ScoopingPage({
 
     socket.onerror = () => {
       if (active) {
-        setErrorMessage('진행 상태 WebSocket 연결에 실패했습니다.')
+        triggerFailure('진행 상태 WebSocket 연결에 실패했습니다.')
       }
     }
 
@@ -98,7 +161,17 @@ export function ScoopingPage({
       window.removeEventListener('beforeunload', closeSocket)
       closeSocket()
     }
-  }, [orderId, scoops.length, onComplete])
+  }, [orderId, iceCreamType, scoops.length])
+
+  const handleManualRetry = async () => {
+    if (typeof onRetrySoftOrder !== 'function' || isRetryingOrder) return
+    setErrorMessage('')
+    setStatusMessage('소프트 아이스크림 제조를 다시 요청하고 있습니다.')
+    const res = await onRetrySoftOrder({ auto: false })
+    if (res && !res.ok) {
+      setErrorMessage(res.message || '재시도 주문 요청에 실패했습니다.')
+    }
+  }
 
   const isSoft = iceCreamType === 'SOFT'
   const currentFlavorId = scoops[scoopIdx]
@@ -118,9 +191,13 @@ export function ScoopingPage({
 
       <span className="step-pill">STEP 5 · 제조 중 ({orderId})</span>
       <h1 className="kiosk-title">
-        {errorMessage ? '제조를 완료하지 못했습니다' : '아이스크림을 담고 있습니다'}
+        {errorMessage
+          ? '제조를 완료하지 못했습니다'
+          : isAutoRetrying
+            ? '자동 재시도를 준비하고 있습니다'
+            : '아이스크림을 담고 있습니다'}
       </h1>
-      <p className="kiosk-desc">
+      <p className="kiosk-desc" style={errorMessage ? { color: '#a95d47' } : undefined}>
         {isSoft ? (
           <strong>소프트 아이스크림</strong>
         ) : (
@@ -206,9 +283,39 @@ export function ScoopingPage({
       </div>
 
       {errorMessage && (
-        <button type="button" className="primary-cta" onClick={onReset}>
-          처음 화면으로
-        </button>
+        <div
+          className="kiosk-footer"
+          style={{ justifyContent: 'center', marginTop: '12px', gap: '10px', flexWrap: 'wrap' }}
+        >
+          {isSoft && typeof onRetrySoftOrder === 'function' && (
+            <button
+              type="button"
+              className="primary-cta primary-cta--compact"
+              disabled={isRetryingOrder}
+              onClick={handleManualRetry}
+            >
+              {isRetryingOrder ? '재시도 요청 중...' : '다시 시도'}
+            </button>
+          )}
+          {isSoft && typeof onRemeasureCup === 'function' && (
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={isRetryingOrder}
+              onClick={onRemeasureCup}
+            >
+              컵 다시 측정
+            </button>
+          )}
+          <button
+            type="button"
+            className={isSoft ? 'ghost-btn' : 'primary-cta'}
+            disabled={isRetryingOrder}
+            onClick={onReset}
+          >
+            처음 화면으로
+          </button>
+        </div>
       )}
     </section>
   )

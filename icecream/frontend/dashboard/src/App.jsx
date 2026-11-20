@@ -2,12 +2,14 @@ import { ActionCard } from './components/ActionCard'
 import { ActivityLog } from './components/ActivityLog'
 import { ManualControlPanel } from './components/ManualControlPanel'
 import { OrderHistoryPanel } from './components/OrderHistoryPanel'
+import { ScenarioBuilderPanel } from './components/ScenarioBuilderPanel'
 import { ScriptRunnerPanel } from './components/ScriptRunnerPanel'
 import { StatusBanner } from './components/StatusBanner'
 import { TelemetryPanel } from './components/TelemetryPanel'
 import { useManualControl } from './hooks/useManualControl'
 import { useOrders } from './hooks/useOrders'
 import { useRobotActions } from './hooks/useRobotActions'
+import { useScenarioBuilder } from './hooks/useScenarioBuilder'
 import { useScriptRunner } from './hooks/useScriptRunner'
 import { useTelemetry } from './hooks/useTelemetry'
 
@@ -32,6 +34,12 @@ export default function App() {
   const { telemetry, wsStatus } = useTelemetry()
   const manual = useManualControl()
   const scriptRunner = useScriptRunner()
+  const scenario = useScenarioBuilder({
+    actions,
+    executeAction,
+    isGlobalBusy: isBusy,
+  })
+  const isAnyActionBusy = isBusy || scenario.isRunning
   const {
     orders,
     statusFilter,
@@ -79,13 +87,19 @@ export default function App() {
 
         <ScriptRunnerPanel runner={scriptRunner} />
 
+        <ScenarioBuilderPanel
+          actions={actions}
+          isGlobalBusy={isAnyActionBusy}
+          scenario={scenario}
+        />
+
         <section className="actions-grid" aria-label="로봇 모션 제어">
           {actions.map((action) => (
             <ActionCard
               key={action.id}
               action={action}
               isRunning={activeActionId === action.id}
-              isDisabled={isBusy}
+              isDisabled={isAnyActionBusy}
               onExecute={handleExecuteAction}
             />
           ))}

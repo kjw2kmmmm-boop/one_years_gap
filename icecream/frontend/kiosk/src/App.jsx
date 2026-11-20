@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { CompletePage } from './pages/CompletePage'
 import { CupInsertPage } from './pages/CupInsertPage'
 import { FlavorSelectPage } from './pages/FlavorSelectPage'
@@ -27,8 +27,10 @@ export default function App() {
   const [measuredCup, setMeasuredCup] = useState({ heightZ: 115.0, diameter: 90.0 })
   const [selectedScoops, setSelectedScoops] = useState([])
   const [orderId, setOrderId] = useState('')
+  const [softRetryCount, setSoftRetryCount] = useState(0)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
   const [orderSubmitError, setOrderSubmitError] = useState('')
+  const isSubmittingRef = useRef(false)
 
   const activePreset = useMemo(
     () => CUP_PRESETS.find((item) => item.id === presetId) ?? CUP_PRESETS[1],
@@ -54,37 +56,70 @@ export default function App() {
   }, [activePreset])
 
   const submitOrder = useCallback(
-    async (type, scoops) => {
-      if (isSubmittingOrder) return
+    async (type, scoops, { maxDispatchRetries = 0, retryCount = 0 } = {}) => {
+      if (isSubmittingRef.current) return { ok: false, message: '주문 처리 중입니다.' }
+      isSubmittingRef.current = true
       setIsSubmittingOrder(true)
       setOrderSubmitError('')
       try {
-        const created = await createOrder({
-          ice_cream_type: type,
-          cup_height_z: measuredCup.heightZ,
-          cup_diameter: measuredCup.diameter,
-          scoops,
-        })
-        setIceCreamType(type)
-        setSelectedScoops(scoops)
-        setOrderId(created.order_code)
-        setStep('SCOOPING')
-      } catch (err) {
-        setOrderSubmitError(err.message || '주문을 서버에 저장하지 못했습니다.')
+        let lastError = null
+        for (let attempt = 0; attempt <= maxDispatchRetries; attempt += 1) {
+          try {
+            const created = await createOrder({
+              ice_cream_type: type,
+              cup_height_z: measuredCup.heightZ,
+              cup_diameter: measuredCup.diameter,
+              scoops,
+            })
+            setIceCreamType(type)
+            setSelectedScoops(scoops)
+            setSoftRetryCount(retryCount)
+            setOrderId(created.order_code)
+            setStep('SCOOPING')
+            return { ok: true, orderCode: created.order_code }
+          } catch (err) {
+            lastError = err
+            if (attempt < maxDispatchRetries) {
+              await new Promise((resolve) => setTimeout(resolve, 800))
+            }
+          }
+        }
+        const message = lastError?.message || '주문을 서버에 저장하지 못했습니다.'
+        setOrderSubmitError(message)
+        return { ok: false, message }
       } finally {
+        isSubmittingRef.current = false
         setIsSubmittingOrder(false)
       }
     },
-    [isSubmittingOrder, measuredCup],
+    [measuredCup],
   )
 
   const handleSelectSoftIceCream = useCallback(() => {
-    submitOrder('SOFT', [])
+    submitOrder('SOFT', [], { maxDispatchRetries: 1, retryCount: 0 })
   }, [submitOrder])
+
+  const handleRetrySoftOrder = useCallback(
+    ({ auto = false } = {}) => {
+      const nextRetryCount = auto ? softRetryCount + 1 : softRetryCount
+      return submitOrder('SOFT', [], {
+        maxDispatchRetries: 1,
+        retryCount: nextRetryCount,
+      })
+    },
+    [softRetryCount, submitOrder],
+  )
+
+  const handleRemeasureCup = useCallback(() => {
+    setOrderId('')
+    setSoftRetryCount(0)
+    setOrderSubmitError('')
+    setStep('MEASURING')
+  }, [])
 
   const handleConfirmScoops = useCallback(
     (scoops) => {
-      submitOrder('CUP', scoops)
+      submitOrder('CUP', scoops, { retryCount: 0 })
     },
     [submitOrder],
   )
@@ -97,6 +132,7 @@ export default function App() {
     setIceCreamType('CUP')
     setSelectedScoops([])
     setOrderId('')
+    setSoftRetryCount(0)
     setOrderSubmitError('')
     setStep('INSERT_CUP')
   }, [])
@@ -178,6 +214,10 @@ export default function App() {
               orderId={orderId}
               iceCreamType={iceCreamType}
               scoops={selectedScoops}
+              softRetryCount={softRetryCount}
+              isRetryingOrder={isSubmittingOrder}
+              onRetrySoftOrder={handleRetrySoftOrder}
+              onRemeasureCup={handleRemeasureCup}
               onComplete={handleScoopComplete}
               onReset={handleReset}
             />

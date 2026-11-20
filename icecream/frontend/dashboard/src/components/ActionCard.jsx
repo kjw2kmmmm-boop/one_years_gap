@@ -5,8 +5,24 @@ export function ActionCard({ action, isRunning, isDisabled, onExecute }) {
   const activeOption = action.options?.find((opt) => opt.value === selectedOption)
   const specText = activeOption?.spec ?? action.spec
 
+  const handleDragStart = (event) => {
+    const payload = {
+      source: 'palette',
+      actionId: action.id,
+      param: action.options ? selectedOption : undefined,
+    }
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-icecream-action', JSON.stringify(payload))
+    event.dataTransfer.setData('text/plain', action.id)
+  }
+
   return (
-    <article className={`action-card ${isRunning ? 'action-card--running' : ''}`}>
+    <article
+      className={`action-card ${isRunning ? 'action-card--running' : ''}`}
+      draggable={!isDisabled}
+      onDragStart={handleDragStart}
+      title="간이 시나리오 빌더로 드래그해 추가할 수 있습니다"
+    >
       <div className="action-card__header">
         <span className="action-card__endpoint">{action.endpoint}</span>
         <span className="action-card__command">{action.id}</span>

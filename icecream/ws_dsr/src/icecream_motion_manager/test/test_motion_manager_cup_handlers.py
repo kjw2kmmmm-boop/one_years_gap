@@ -71,35 +71,37 @@ def test_move_cup_hold_calculates_target_and_validates_arrival() -> None:
 
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
         with patch.object(move_cup_hold_mod, "CORNER_XY", (273.0, -225.0)):
-            with patch.object(move_cup_hold_mod, "TCP_OFFSET", (-2.0, 35.0, 238.0)):
-                with patch.object(move_cup_hold_mod, "SAFE_Z", 410.0):
-                    with patch.object(move_cup_hold_mod, "HEIGHT_RANGE", (60.0, 180.0)):
-                        with patch.object(move_cup_hold_mod, "DIAMETER_RANGE", (40.0, 150.0)):
-                            with patch.object(
-                                move_cup_hold_mod,
-                                "get_section_config",
-                                return_value={},
-                            ):
-                                with patch.object(
-                                    move_cup_hold_mod,
-                                    "get_motion_entry",
-                                    return_value=(
-                                        [360.89, -145.12, 343.92, -124.86, 179.92, -163.43],
-                                        80.0,
-                                        80.0,
-                                    ),
-                                ):
+            with patch.object(move_cup_hold_mod, "GROUND_Z", 0.0):
+                with patch.object(move_cup_hold_mod, "GRIP_DEPTH", 10.0):
+                    with patch.object(move_cup_hold_mod, "TCP_OFFSET", (-2.0, 35.0, 238.0)):
+                        with patch.object(move_cup_hold_mod, "SAFE_Z", 410.0):
+                            with patch.object(move_cup_hold_mod, "HEIGHT_RANGE", (60.0, 180.0)):
+                                with patch.object(move_cup_hold_mod, "DIAMETER_RANGE", (40.0, 150.0)):
                                     with patch.object(
                                         move_cup_hold_mod,
-                                        "load_cup_diameter_hit",
-                                        return_value=None,
+                                        "get_section_config",
+                                        return_value={},
                                     ):
                                         with patch.object(
                                             move_cup_hold_mod,
-                                            "move_axis_sequence",
-                                            side_effect=fake_move_axis_sequence,
+                                            "get_motion_entry",
+                                            return_value=(
+                                                [360.89, -145.12, 343.92, -124.86, 179.92, -163.43],
+                                                80.0,
+                                                80.0,
+                                            ),
                                         ):
-                                            result = move_cup_hold_mod.move_cup_hold(115.0, 90.0)
+                                            with patch.object(
+                                                move_cup_hold_mod,
+                                                "load_cup_diameter_hit",
+                                                return_value=None,
+                                            ):
+                                                with patch.object(
+                                                    move_cup_hold_mod,
+                                                    "move_axis_sequence",
+                                                    side_effect=fake_move_axis_sequence,
+                                                ):
+                                                    result = move_cup_hold_mod.move_cup_hold(115.0, 90.0)
 
     # R=45 -> cup_x=318, cup_y=-180 -> grip=(363, -180, 105) + offset=(-2, 35, 238)
     assert result[:3] == [361.0, -145.0, 343.0]
@@ -141,9 +143,15 @@ def test_move_cup_hold_works_with_default_measurement_settings() -> None:
                     ):
                         result = move_cup_hold_mod.move_cup_hold(158.55, 90.0)
 
-    expected_x = move_cup_hold_mod.CORNER_XY[0] + 90.0
-    expected_y = move_cup_hold_mod.CORNER_XY[1] + 45.0
-    assert result[:3] == [expected_x, expected_y, 386.55]
+    expected_x = move_cup_hold_mod.CORNER_XY[0] + 90.0 + float(move_cup_hold_mod.TCP_OFFSET[0])
+    expected_y = move_cup_hold_mod.CORNER_XY[1] + 45.0 + float(move_cup_hold_mod.TCP_OFFSET[1])
+    expected_z = (
+        move_cup_hold_mod.GROUND_Z
+        + 158.55
+        - move_cup_hold_mod.GRIP_DEPTH
+        + float(move_cup_hold_mod.TCP_OFFSET[2])
+    )
+    assert result[:3] == [expected_x, expected_y, expected_z]
 
 
 def test_handle_move_cup_hold_uses_target_or_latest_measurements() -> None:
@@ -342,25 +350,43 @@ def test_ensure_default_tcp_resets_custom_tcp_and_registers_if_needed() -> None:
 
 
 def test_move_home_calls_ensure_default_tcp() -> None:
-    """Verify move_home resets TCP after homing and opening gripper."""
+    """Verify move_home restores default TCP before movel homing and opens gripper."""
+    calls: list[tuple] = []
     fake_dsr = ModuleType("DSR_ROBOT2")
-    fake_dsr.posj = lambda *j: tuple(j)
-    fake_dsr.amovej = lambda pos, vel=0.0, acc=0.0: 0
+    fake_dsr.DR_BASE = 0
+    fake_dsr.DR_MV_MOD_ABS = 0
+    fake_dsr.posx = lambda *coords: tuple(coords)
 
+    def fake_movel(pos, vel=0.0, acc=0.0, ref=0, mod=0):
+        calls.append(("movel", pos, vel, acc, ref, mod))
+        return 0
+
+    fake_dsr.movel = fake_movel
+
+    home_pose = [367.47, 7.96, 423.09, 96.96, 179.96, 96.72]
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
         with patch.object(
             move_home_mod,
             "get_motion_entry",
-            return_value=([0.0, 0.0, 90.0, 0.0, 90.0, 0.0], 70.0, 70.0),
+            return_value=(home_pose, 70.0, 70.0),
         ):
-            with patch.object(move_home_mod, "wait_for_motion") as mock_wait:
-                with patch.object(move_home_mod, "grip_release") as mock_rel:
-                    with patch.object(move_home_mod, "ensure_default_tcp") as mock_tcp:
-                        move_home_mod.move_home()
+            with patch.object(
+                move_home_mod,
+                "ensure_default_tcp",
+                side_effect=lambda: calls.append(("tcp",)),
+            ):
+                with patch.object(
+                    move_home_mod,
+                    "grip_release",
+                    side_effect=lambda: calls.append(("release",)),
+                ):
+                    move_home_mod.move_home()
 
-    mock_wait.assert_called_once()
-    mock_rel.assert_called_once()
-    mock_tcp.assert_called_once()
+    assert calls == [
+        ("tcp",),
+        ("movel", tuple(home_pose), 70.0, 70.0, 0, 0),
+        ("release",),
+    ]
 
 
 def test_move_blending_builds_posb_segments_with_zero_last_radius() -> None:
@@ -690,7 +716,15 @@ def test_move_cup_hold_uses_saved_hit_minus_5mm(tmp_path, monkeypatch) -> None:
         current_pose[:3] = target[:3]
 
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
-        with patch.object(move_cup_hold_mod, "get_section_config", return_value={}):
+        with patch.object(
+            move_cup_hold_mod,
+            "get_section_config",
+            return_value={
+                "ground_z": 0.0,
+                "grip_depth": 10.0,
+                "hit_offset_xy": [-5.0, -5.0],
+            },
+        ):
             with patch.object(
                 move_cup_hold_mod,
                 "get_motion_entry",
@@ -755,35 +789,37 @@ def test_move_cup_hold_calculates_target_and_validates_arrival() -> None:
 
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
         with patch.object(move_cup_hold_mod, "CORNER_XY", (273.0, -225.0)):
-            with patch.object(move_cup_hold_mod, "TCP_OFFSET", (-2.0, 35.0, 238.0)):
-                with patch.object(move_cup_hold_mod, "SAFE_Z", 410.0):
-                    with patch.object(move_cup_hold_mod, "HEIGHT_RANGE", (60.0, 180.0)):
-                        with patch.object(move_cup_hold_mod, "DIAMETER_RANGE", (40.0, 150.0)):
-                            with patch.object(
-                                move_cup_hold_mod,
-                                "get_section_config",
-                                return_value={},
-                            ):
-                                with patch.object(
-                                    move_cup_hold_mod,
-                                    "get_motion_entry",
-                                    return_value=(
-                                        [360.89, -145.12, 343.92, -124.86, 179.92, -163.43],
-                                        80.0,
-                                        80.0,
-                                    ),
-                                ):
+            with patch.object(move_cup_hold_mod, "GROUND_Z", 0.0):
+                with patch.object(move_cup_hold_mod, "GRIP_DEPTH", 10.0):
+                    with patch.object(move_cup_hold_mod, "TCP_OFFSET", (-2.0, 35.0, 238.0)):
+                        with patch.object(move_cup_hold_mod, "SAFE_Z", 410.0):
+                            with patch.object(move_cup_hold_mod, "HEIGHT_RANGE", (60.0, 180.0)):
+                                with patch.object(move_cup_hold_mod, "DIAMETER_RANGE", (40.0, 150.0)):
                                     with patch.object(
                                         move_cup_hold_mod,
-                                        "load_cup_diameter_hit",
-                                        return_value=None,
+                                        "get_section_config",
+                                        return_value={},
                                     ):
                                         with patch.object(
                                             move_cup_hold_mod,
-                                            "move_axis_sequence",
-                                            side_effect=fake_move_axis_sequence,
+                                            "get_motion_entry",
+                                            return_value=(
+                                                [360.89, -145.12, 343.92, -124.86, 179.92, -163.43],
+                                                80.0,
+                                                80.0,
+                                            ),
                                         ):
-                                            result = move_cup_hold_mod.move_cup_hold(115.0, 90.0)
+                                            with patch.object(
+                                                move_cup_hold_mod,
+                                                "load_cup_diameter_hit",
+                                                return_value=None,
+                                            ):
+                                                with patch.object(
+                                                    move_cup_hold_mod,
+                                                    "move_axis_sequence",
+                                                    side_effect=fake_move_axis_sequence,
+                                                ):
+                                                    result = move_cup_hold_mod.move_cup_hold(115.0, 90.0)
 
     # R=45 -> cup_x=318, cup_y=-180 -> grip=(363, -180, 105) + offset=(-2, 35, 238)
     assert result[:3] == [361.0, -145.0, 343.0]
@@ -825,9 +861,15 @@ def test_move_cup_hold_works_with_default_measurement_settings() -> None:
                     ):
                         result = move_cup_hold_mod.move_cup_hold(158.55, 90.0)
 
-    expected_x = move_cup_hold_mod.CORNER_XY[0] + 90.0
-    expected_y = move_cup_hold_mod.CORNER_XY[1] + 45.0
-    assert result[:3] == [expected_x, expected_y, 386.55]
+    expected_x = move_cup_hold_mod.CORNER_XY[0] + 90.0 + float(move_cup_hold_mod.TCP_OFFSET[0])
+    expected_y = move_cup_hold_mod.CORNER_XY[1] + 45.0 + float(move_cup_hold_mod.TCP_OFFSET[1])
+    expected_z = (
+        move_cup_hold_mod.GROUND_Z
+        + 158.55
+        - move_cup_hold_mod.GRIP_DEPTH
+        + float(move_cup_hold_mod.TCP_OFFSET[2])
+    )
+    assert result[:3] == [expected_x, expected_y, expected_z]
 
 
 def test_handle_move_cup_hold_uses_target_or_latest_measurements() -> None:
@@ -1026,25 +1068,43 @@ def test_ensure_default_tcp_resets_custom_tcp_and_registers_if_needed() -> None:
 
 
 def test_move_home_calls_ensure_default_tcp() -> None:
-    """Verify move_home resets TCP after homing and opening gripper."""
+    """Verify move_home restores default TCP before movel homing and opens gripper."""
+    calls: list[tuple] = []
     fake_dsr = ModuleType("DSR_ROBOT2")
-    fake_dsr.posj = lambda *j: tuple(j)
-    fake_dsr.amovej = lambda pos, vel=0.0, acc=0.0: 0
+    fake_dsr.DR_BASE = 0
+    fake_dsr.DR_MV_MOD_ABS = 0
+    fake_dsr.posx = lambda *coords: tuple(coords)
 
+    def fake_movel(pos, vel=0.0, acc=0.0, ref=0, mod=0):
+        calls.append(("movel", pos, vel, acc, ref, mod))
+        return 0
+
+    fake_dsr.movel = fake_movel
+
+    home_pose = [367.47, 7.96, 423.09, 96.96, 179.96, 96.72]
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
         with patch.object(
             move_home_mod,
             "get_motion_entry",
-            return_value=([0.0, 0.0, 90.0, 0.0, 90.0, 0.0], 70.0, 70.0),
+            return_value=(home_pose, 70.0, 70.0),
         ):
-            with patch.object(move_home_mod, "wait_for_motion") as mock_wait:
-                with patch.object(move_home_mod, "grip_release") as mock_rel:
-                    with patch.object(move_home_mod, "ensure_default_tcp") as mock_tcp:
-                        move_home_mod.move_home()
+            with patch.object(
+                move_home_mod,
+                "ensure_default_tcp",
+                side_effect=lambda: calls.append(("tcp",)),
+            ):
+                with patch.object(
+                    move_home_mod,
+                    "grip_release",
+                    side_effect=lambda: calls.append(("release",)),
+                ):
+                    move_home_mod.move_home()
 
-    mock_wait.assert_called_once()
-    mock_rel.assert_called_once()
-    mock_tcp.assert_called_once()
+    assert calls == [
+        ("tcp",),
+        ("movel", tuple(home_pose), 70.0, 70.0, 0, 0),
+        ("release",),
+    ]
 
 
 def test_move_blending_builds_posb_segments_with_zero_last_radius() -> None:
@@ -1374,7 +1434,15 @@ def test_move_cup_hold_uses_saved_hit_minus_5mm(tmp_path, monkeypatch) -> None:
         current_pose[:3] = target[:3]
 
     with patch.dict(sys.modules, {"DSR_ROBOT2": fake_dsr}):
-        with patch.object(move_cup_hold_mod, "get_section_config", return_value={}):
+        with patch.object(
+            move_cup_hold_mod,
+            "get_section_config",
+            return_value={
+                "ground_z": 0.0,
+                "grip_depth": 10.0,
+                "hit_offset_xy": [-5.0, -5.0],
+            },
+        ):
             with patch.object(
                 move_cup_hold_mod,
                 "get_motion_entry",
